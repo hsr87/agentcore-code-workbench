@@ -1,0 +1,5 @@
+# Kotlin Multiplatform: builds only the androidApp module
+api_level: 30
+build_tasks: :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest
+test_runner: androidx.test.runner.AndroidJUnitRunner
+emulator_params: -gpu swiftshader_indirect -no-audio -memory 3072

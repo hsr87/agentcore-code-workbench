@@ -1,0 +1,5 @@
+kube_context = "arn:aws:eks:us-east-1:ACCOUNT:cluster/cwe-eks-eks"
+# This DaemonSet is privileged. Pin a reviewed digest from the official squat/generic-device-plugin
+# repository; a mutable :latest tag is rejected.
+kvm_plugin_image = "squat/generic-device-plugin@sha256:REPLACE"
+namespace        = "cwe"

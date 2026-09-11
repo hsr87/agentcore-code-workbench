@@ -1,0 +1,5 @@
+name: node-cli
+description: Node 24 CLI tool development environment
+runtime: node
+node_packages: [vitest]
+workspace: workspace

@@ -1,0 +1,6 @@
+# React Native: bundles the JS, then builds the android/ module with Gradle
+api_level: 30
+build_tasks: assembleDebug assembleDebugAndroidTest
+setup_commands: [npm ci, "npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle"]
+test_runner: androidx.test.runner.AndroidJUnitRunner
+emulator_params: -gpu swiftshader_indirect -no-audio -memory 3072

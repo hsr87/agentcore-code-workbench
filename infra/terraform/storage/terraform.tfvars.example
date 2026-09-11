@@ -1,0 +1,4 @@
+region       = "us-east-1"
+project_name = "cwe-eks"
+# Use the same override in foundation when importing a retained existing bucket.
+# recordings_bucket_name = "existing-recordings-bucket"

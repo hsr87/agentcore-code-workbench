@@ -1,0 +1,5 @@
+# Native Android (Kotlin/Java + Gradle)
+api_level: 30
+build_tasks: assembleDebug assembleDebugAndroidTest
+test_runner: androidx.test.runner.AndroidJUnitRunner
+emulator_params: -gpu swiftshader_indirect -no-audio -memory 3072

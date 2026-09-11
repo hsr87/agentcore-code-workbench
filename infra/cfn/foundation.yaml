@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  code-workflow-emulator foundation: AgentCore Code Interpreter (PUBLIC network, custom),
+  execution role, recordings bucket, and the shared resources for the Android emulator host
+  (ECR repo for the device agent, instance role/profile, security group).
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: cwe
+    AllowedPattern: "^[a-z][a-z0-9-]{1,20}$"
+    Description: Prefix for resource names.
+  AllowedCidr:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+    Description: >-
+      Optional. CIDR allowed to reach the Android device agent (port 8080) directly. Leave empty (default) to keep the
+      host closed to inbound traffic and connect through SSM Session Manager port forwarding instead.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the Android emulator host security group.
+  CreateAndroidResources:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Create ECR repo, instance role/profile and security group for the Android emulator host.
+
+Conditions:
+  Android: !Equals [!Ref CreateAndroidResources, "true"]
+  HasAllowedCidr: !Not [!Equals [!Ref AllowedCidr, ""]]
+  AndroidWithCidr: !And [!Condition Android, !Condition HasAllowedCidr]
+
+Rules:
+  NoWorldOpenCidr:
+    # Opening the device agent to the entire internet is not allowed (public mode is for a fixed office/VPN range only)
+    Assertions:
+      - Assert: !Not [!Equals [!Ref AllowedCidr, "0.0.0.0/0"]]
+        AssertDescription: AllowedCidr must not be 0.0.0.0/0. Use SSM port forwarding (default) or a fixed office/VPN CIDR.
+
+Resources:
+  # ---------------------------------------------------------------- recordings
+  RecordingsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-recordings-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+
+  # ------------------------------------------------------- code interpreter
+  CodeInterpreterExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-code-interpreter-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BedrockAgentCoreBuiltInTools
+            Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+              ArnLike: { "aws:SourceArn": !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*" }
+      Policies:
+        - PolicyName: recordings-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket]
+                Resource: [!GetAtt RecordingsBucket.Arn, !Sub "${RecordingsBucket.Arn}/*"]
+
+  CodeInterpreter:
+    Type: AWS::BedrockAgentCore::CodeInterpreterCustom
+    Properties:
+      Name: !Sub "${ProjectName}_public"
+      Description: code-workflow-emulator sandbox with outbound internet (pip/npm installs)
+      ExecutionRoleArn: !GetAtt CodeInterpreterExecutionRole.Arn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      Tags: { project: !Ref ProjectName }
+
+  # ------------------------------------------------------- caller permissions
+  OperatorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${ProjectName}-operator"
+      Description: Attach to the principal that runs the emulator (API server, CI, developers).
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CodeInterpreterSessions
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:StartCodeInterpreterSession
+              - bedrock-agentcore:StopCodeInterpreterSession
+              - bedrock-agentcore:InvokeCodeInterpreter
+              - bedrock-agentcore:GetCodeInterpreterSession
+              - bedrock-agentcore:ListCodeInterpreterSessions
+              - bedrock-agentcore:GetCodeInterpreter
+            Resource: "*"
+          - Sid: Models
+            Effect: Allow
+            Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream, bedrock:Converse, bedrock:ConverseStream]
+            Resource: "*"
+          - Sid: Recordings
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:ListBucket]
+            Resource: [!GetAtt RecordingsBucket.Arn, !Sub "${RecordingsBucket.Arn}/*"]
+          - Sid: MemoryAndEvaluationsOptional
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:CreateEvent
+              - bedrock-agentcore:ListEvents
+              - bedrock-agentcore:RetrieveMemoryRecords
+              - bedrock-agentcore:Evaluate
+              - bedrock-agentcore:GetEvaluator
+              - bedrock-agentcore:ListEvaluators
+              - logs:StartQuery
+              - logs:GetQueryResults
+            Resource: "*"
+          - Sid: AndroidHostDescribe
+            Effect: Allow
+            Action: [ec2:DescribeInstances, ssm:DescribeInstanceInformation, ssm:DescribeSessions]
+            Resource: "*"
+          - Sid: AndroidHostAmiLookup
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/*"
+          - Sid: AndroidHostRunTaggedInstance
+            # can only launch allowed instance types carrying the project tag
+            Effect: Allow
+            Action: ec2:RunInstances
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "aws:RequestTag/project": !Ref ProjectName }
+              StringLike: { "ec2:InstanceType": ["c8i.*", "m8i.*", "r8i.*", "*.metal*"] }
+          - Sid: AndroidHostRunDependencies
+            Effect: Allow
+            Action: ec2:RunInstances
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+          - Sid: AndroidHostTagOnLaunch
+            Effect: Allow
+            Action: ec2:CreateTags
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*/*"
+            Condition:
+              StringEquals: { "ec2:CreateAction": RunInstances }
+          - Sid: AndroidHostPoolClaimTags
+            # changes tags when assigning a warm-pool host to a session. The project tag cannot be changed (so it can't escape the reaper/cleanup scope)
+            Effect: Allow
+            Action: [ec2:CreateTags, ec2:DeleteTags]
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "ec2:ResourceTag/project": !Ref ProjectName }
+              ForAllValues:StringLike: { "aws:TagKeys": ["cwe:*", "cwe_session", "Name"] }
+          - Sid: AndroidHostTokens
+            # host token (SecureString) and warm-pool token. Only the parameter name goes into user data
+            Effect: Allow
+            Action: [ssm:PutParameter, ssm:GetParameter, ssm:DeleteParameter]
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/hosts/*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/pool/*"
+          - Sid: AndroidAmiBakeDescribe
+            Effect: Allow
+            Action: [ec2:DescribeImages, ec2:DescribeSnapshots, ssm:GetCommandInvocation]
+            Resource: "*"
+          - Sid: AndroidAmiBakeCommandsOnTaggedHosts
+            # AWS-RunShellScript only on instances carrying the project tag (cannot run on other SSM-managed instances in the account)
+            Effect: Allow
+            Action: ssm:SendCommand
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "ssm:resourceTag/project": !Ref ProjectName }
+          - Sid: AndroidAmiBakeCommandDocument
+            Effect: Allow
+            Action: ssm:SendCommand
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+          - Sid: AndroidAmiBakeCreateImage
+            Effect: Allow
+            Action: [ec2:CreateImage, ec2:CreateSnapshot]
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+            Condition:
+              StringEquals: { "ec2:ResourceTag/project": !Ref ProjectName }
+          - Sid: AndroidAmiBakeNewImageResources
+            Effect: Allow
+            Action: [ec2:CreateImage, ec2:CreateSnapshot, ec2:CreateTags]
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}::snapshot/*"
+          - Sid: AndroidAmiCleanup
+            Effect: Allow
+            Action: [ec2:DeregisterImage, ec2:DeleteSnapshot]
+            Resource:
+              - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
+              - !Sub "arn:aws:ec2:${AWS::Region}::snapshot/*"
+            Condition:
+              StringEquals: { "ec2:ResourceTag/project": !Ref ProjectName }
+          - Sid: AndroidHostTerminateOwn
+            Effect: Allow
+            Action: ec2:TerminateInstances
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "ec2:ResourceTag/project": !Ref ProjectName }
+          - Sid: AndroidHostPortForwardingInstance
+            # Apply the tag condition only to the instance resource. Document ARNs carry no tags, so putting it in the same statement would always deny.
+            Effect: Allow
+            Action: ssm:StartSession
+            Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "ssm:resourceTag/project": !Ref ProjectName }
+          - Sid: AndroidHostPortForwardingDocument
+            Effect: Allow
+            Action: ssm:StartSession
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-StartPortForwardingSession"
+          - Sid: AndroidHostSessionEnd
+            Effect: Allow
+            Action: [ssm:TerminateSession]
+            Resource: !Sub "arn:aws:ssm:*:*:session/${!aws:username}-*"
+          - Sid: PassAndroidInstanceRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-android-instance-role"
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-emulator-image-build-role"
+
+  # --------------------------------------------------------- android host
+  DeviceAgentRepository:
+    Type: AWS::ECR::Repository
+    Condition: Android
+    Properties:
+      RepositoryName: !Sub "${ProjectName}-device-agent"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EmptyOnDelete: true
+
+  EmulatorImageRepository:
+    # API 30+ images are built with scripts/build_emulator_image.sh and pushed here
+    Type: AWS::ECR::Repository
+    Condition: Android
+    Properties:
+      RepositoryName: !Sub "${ProjectName}-android-emulator"
+      ImageScanningConfiguration: { ScanOnPush: false }
+      EmptyOnDelete: true
+
+  AndroidInstanceRole:
+    Type: AWS::IAM::Role
+    Condition: Android
+    Properties:
+      RoleName: !Sub "${ProjectName}-android-instance-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        # The session host reads only its own token parameter (hosts/*, pool/*). It has no image-push permission:
+        # even if a build container obtains this role via IMDS, it still cannot overwrite the shared emulator image
+        - PolicyName: host-token-read
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/hosts/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/pool/*"
+
+  AndroidInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: Android
+    Properties:
+      InstanceProfileName: !Sub "${ProjectName}-android-instance-profile"
+      Roles: [!Ref AndroidInstanceRole]
+
+  EmulatorImageBuildRole:
+    # dedicated to scripts/build_emulator_image.sh (a one-off build host). Kept separate from the session host role
+    Type: AWS::IAM::Role
+    Condition: Android
+    Properties:
+      RoleName: !Sub "${ProjectName}-emulator-image-build-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: emulator-image-push
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ecr:PutImage, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:BatchCheckLayerAvailability]
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-android-emulator"
+
+  EmulatorImageBuildInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: Android
+    Properties:
+      InstanceProfileName: !Sub "${ProjectName}-emulator-image-build-profile"
+      Roles: [!Ref EmulatorImageBuildRole]
+
+  AndroidSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: Android
+    Properties:
+      GroupName: !Sub "${ProjectName}-android-host"
+      GroupDescription: Android emulator host - device agent HTTP
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags: [{ Key: project, Value: !Ref ProjectName }]
+
+  AndroidSelfIngress:
+    # only agents sharing this same security group (e.g. VPC-mode AgentCore Runtime) can reach it over the private IP
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: Android
+    Properties:
+      GroupId: !Ref AndroidSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref AndroidSecurityGroup
+      Description: in-VPC agents sharing this security group
+
+  AndroidCidrIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: AndroidWithCidr
+    Properties:
+      GroupId: !Ref AndroidSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      CidrIp: !Ref AllowedCidr
+      Description: device agent direct access (opt-in)
+
+Outputs:
+  CodeInterpreterId:
+    Value: !GetAtt CodeInterpreter.CodeInterpreterId
+  RecordingsBucket:
+    Value: !Ref RecordingsBucket
+  OperatorPolicyArn:
+    Value: !Ref OperatorPolicy
+  DeviceAgentRepositoryUri:
+    Condition: Android
+    Value: !GetAtt DeviceAgentRepository.RepositoryUri
+  EmulatorImageRepositoryUri:
+    Condition: Android
+    Value: !GetAtt EmulatorImageRepository.RepositoryUri
+  AndroidInstanceProfile:
+    Condition: Android
+    Value: !Ref AndroidInstanceProfile
+  EmulatorImageBuildInstanceProfile:
+    Condition: Android
+    Value: !Ref EmulatorImageBuildInstanceProfile
+  AndroidSecurityGroupId:
+    Condition: Android
+    Value: !Ref AndroidSecurityGroup

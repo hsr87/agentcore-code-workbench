@@ -1,0 +1,18 @@
+region                 = "us-east-1"
+project_name           = "cwe-eks"
+vpc_id                 = "vpc-REPLACE"
+subnet_ids     = ["subnet-REPLACE-A", "subnet-REPLACE-B"]
+# Set an EKS-supported version explicitly before planning.
+cluster_version        = "REPLACE"
+cluster_admin_role_arn = "arn:aws:iam::ACCOUNT:role/EksAdministrator"
+operator_role_arns     = ["arn:aws:iam::ACCOUNT:role/CweOperator"]
+# Default is private-only. Use a VPN or an in-VPC Terraform runner.
+endpoint_public_access = false
+# For local access without VPN:
+# endpoint_public_access       = true
+# endpoint_public_access_cidrs = ["203.0.113.10/32"] # replace with your fixed egress
+# Sandbox and operator S3 access is confined to this prefix of the recordings bucket.
+recordings_prefix     = "cwe"
+android_instance_type = "m8i.2xlarge"
+android_desired_size  = 1
+android_max_size      = 4

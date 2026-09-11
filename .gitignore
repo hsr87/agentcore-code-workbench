@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.pyc
+.cwe_data/
+.pytest_cache/
+dist/
+.env
+infra/*.out.json
+infra/optional/*.out.json
+.ruff_cache/
+pfr.txt
+.DS_Store
+*.pdf
+*.pptx
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+.env.eks
+
+# Project instructions for the maintainer's Claude Code sessions; not part of the release
+CLAUDE.md
+.env-*

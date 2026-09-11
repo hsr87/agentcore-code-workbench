@@ -1,0 +1,113 @@
+{
+  "verified_at_utc": "2026-09-10T15:23:20.081056+00:00",
+  "integration_passed": true,
+  "deployment": {
+    "region": "us-east-1",
+    "eks_version": "1.35",
+    "android_node_type": "m8i.2xlarge",
+    "android_nodes": 1,
+    "system_nodes": 1,
+    "infrastructure_retained": true
+  },
+  "observed_first_boot_seconds": 94.36,
+  "observed_first_build_seconds": 87.3,
+  "final_build_seconds": 89.4,
+  "ui": {
+    "counter_before": 0,
+    "counter_after": 3,
+    "video_bytes": 130131
+  },
+  "live_view": {
+    "cookie_exchange": true,
+    "jpeg_bytes": 16807
+  },
+  "baseline_tests": {
+    "passed": 2,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "agent": {
+    "status": "succeeded",
+    "model_id": "us.anthropic.claude-opus-5",
+    "exec_count": 9,
+    "errors": 0,
+    "usage": {
+      "inputTokens": 65986,
+      "outputTokens": 1271,
+      "totalTokens": 67257,
+      "cacheReadInputTokens": 56187,
+      "cacheCreationInputTokens": 9777
+    },
+    "cost_usd_estimate": 0.1272
+  },
+  "independent_agent_tests": {
+    "passed": 2,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "snapshot_restore": {
+    "source_matches": true
+  },
+  "post_hoc_evaluation": {
+    "passed": true,
+    "score": 1.0
+  },
+  "s3_evidence": {
+    "verified_objects": 4
+  },
+  "security_checks": {
+    "eks_api_not_world_open": true,
+    "eks_private_endpoint_enabled": true,
+    "imdsv2_required": true,
+    "metadata_hop_limit_one": true,
+    "nested_virtualization_enabled": true,
+    "nodes_no_world_open_ingress": true,
+    "s3_public_access_blocked": true,
+    "s3_versioning": true,
+    "s3_encryption": true,
+    "session_sa_token_disabled": true,
+    "session_containers_nonprivileged": true,
+    "session_no_hostpath": true,
+    "builder_no_token_env": true,
+    "builder_metadata_network_blocked": true
+  },
+  "rbac": {
+    "create jobs": "yes",
+    "get secrets": "no",
+    "delete nodes": "no"
+  },
+  "device_auth": {
+    "without_token": 401,
+    "wrong_session": 403
+  },
+  "local_tests_passed": 79,
+  "terraform": {
+    "storage": "no_changes",
+    "foundation": "no_changes",
+    "platform": "no_changes"
+  },
+  "artifacts": {
+    "before.png": {
+      "bytes": 41507,
+      "sha256": "10ecf475e5c7d6567fab94cee02b140129f017bbc4cb48bec057619ad0b488b0"
+    },
+    "after.png": {
+      "bytes": 41843,
+      "sha256": "6429a22f0b80cdbe5250b871a6a7bfa4f0a191444eedaa8e70b2ceafcc40f949"
+    },
+    "interaction.mp4": {
+      "bytes": 130131,
+      "sha256": "03a82de6dbe0294e0254dcd2db2e509003f51c8d0562cdc717fbf99881016786"
+    },
+    "live-frame.jpg": {
+      "bytes": 16807,
+      "sha256": "092d420ac423152d2fb1da9e09767ae339191018f45f13b114341dc0c1e7b46e"
+    }
+  },
+  "job_lifecycle": {
+    "passed": true,
+    "remaining_pods": 0,
+    "identity": "session-operator",
+    "infrastructure_preserved": true
+  }
+}

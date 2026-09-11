@@ -1,0 +1,35 @@
+{
+  "checks": [
+    {
+      "type": "harness_verification",
+      "weight": 2,
+      "description": "harness re-ran the test suite"
+    },
+    {
+      "type": "pytest",
+      "value": 1.0,
+      "weight": 2,
+      "description": "all tests pass"
+    },
+    {
+      "type": "file_exists",
+      "value": "payment_client.py",
+      "description": "client module created"
+    },
+    {
+      "type": "stdout_not_contains",
+      "value": "Traceback",
+      "weight": 0.5
+    },
+    {
+      "type": "max_execution_time",
+      "value": 120,
+      "weight": 0.5
+    }
+  ],
+  "rubric": "1) payment_client.py uses PAYMENT_API_URL from env, 2) handles non-2xx responses, 3) tests exercise both charge and lookup, 4) no hard-coded URLs.",
+  "expected_outcome": "A small payment client with passing tests against the mock payment service.",
+  "pass_threshold": 0.7,
+  "verify_command": "python -m pytest --color=no -q",
+  "verify_mode": "fresh"
+}

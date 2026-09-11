@@ -1,0 +1,16 @@
+name: python-service
+description: FastAPI service + environment that emulates the external payment API with a mock
+runtime: python
+python_packages: [pytest, requests]
+env:
+  APP_ENV: test
+  PAYMENT_API_URL: http://127.0.0.1:8081
+system_setup:
+  - "echo 'setup done'"
+mock_services:
+  - name: payment
+    port: 8081
+    routes:
+      "GET /health": { status: 200, body: { ok: true } }
+      "POST /charge": { status: 201, body: { id: "ch_123", status: "succeeded" } }
+      "GET /charge/ch_123": { status: 200, body: { id: "ch_123", status: "succeeded", amount: 1000 } }
