@@ -36,7 +36,7 @@ The EKS control plane and any ready nodes are billed while idle. Tear down with 
 Letting an agent write and run code raises questions that a plain sandbox does not answer. Each part of this platform exists to answer one of them.
 
 - **Where does the code run, and what can it reach?** Environments are declared once as YAML profiles (`examples/profiles/`), provisioned into a fresh AgentCore Code Interpreter session, and external dependencies are replaced by mock HTTP services inside the sandbox. The agent edits and runs small things here.
-- **What if the build does not fit?** A Code Interpreter microVM has 2 vCPU, 8 GB and about 9 GB of disk that cannot be raised. A session can attach a **workload Pod** on EKS sized by a `WorkloadProfile` (image, CPU, memory, ephemeral storage, environment). The agent gets tools to sync code to it, run builds and tests, start the service and probe it over HTTP. The Pod is where heavy things happen.
+- **What if the build does not fit?** A Code Interpreter microVM has 2 vCPU, 8 GB of memory and 10 GB of disk, and a Runtime microVM 2 vCPU, 8 GB and 1 GB of session storage; none of it can be raised. A session can attach a **workload Pod** on EKS sized by a `WorkloadProfile` (image, CPU, memory, ephemeral storage, environment). The agent gets tools to sync code to it, run builds and tests, start the service and probe it over HTTP. The Pod is where heavy things happen.
 - **Does the app work on a device?** Code Interpreter has no KVM. A device lab on EKS provides one Android emulator per Job with screenshots, UI dumps, input, installs, instrumented tests, screen recording and a live view.
 - **What did the agent actually do?** Every execution, message, written file, screenshot and remote command is written as JSONL and artifacts to S3 or a local directory. A closed session replays offline and can be re-scored later without the sandbox.
 - **Did it succeed, by whose account?** Scoring combines deterministic rules, an LLM judge that sees the transcript, and an optional AgentCore Evaluations pass. The harness runs the verification command itself, on the sandbox or on the Pod, and ignores what the agent claims.
@@ -57,7 +57,7 @@ The EKS side exists because Code Interpreter has no KVM, no custom images, no ad
 | Finch or Docker | Builds the sidecar and workload images for `linux/amd64` and the Runtime image for `linux/arm64`. Set `CWE_CONTAINER_CLI=docker` to use Docker. |
 | AWS permissions | Create EKS, IAM, VPC resources, ECR, S3, KMS, DynamoDB and AgentCore Code Interpreter and Runtime. The first VPC-mode Runtime in an account also needs `iam:CreateServiceLinkedRole`. |
 | Quotas | vCPUs for the node groups; one Elastic IP if the runtime stage creates a NAT gateway (`private_access = "nat"`). Accounts at the EIP limit use `private_access = "endpoints"`. |
-| Bedrock model access | `us.anthropic.claude-opus-5` (agent) and `anthropic.claude-opus-5` (judge) must be usable in the region. Check Bedrock model access in the console if a first invocation returns `AccessDeniedException`. |
+| Bedrock model access | `us.anthropic.claude-opus-5` (agent) and `anthropic.claude-opus-5` (judge) must be usable in the region. Outside the US regions set `CWE_AGENT_MODEL` and `CWE_JUDGE_MODEL` to a cross-region inference profile the region offers (`global.anthropic.claude-opus-5` in Seoul) and add it to `bedrock_model_ids`. Check Bedrock model access in the console if a first invocation returns `AccessDeniedException`. |
 | An existing VPC | Two or more subnets in different Availability Zones for the nodes. Private subnets need NAT; public subnets need `MapPublicIpOnLaunch` for node egress. The `runtime` stage can add two private subnets for the Runtime; nothing else creates a VPC, NAT, endpoints or a VPN. |
 
 Nodes need outbound HTTPS to ECR, S3, STS and to the public image, Gradle and Android SDK repositories.
@@ -114,7 +114,7 @@ Values to fill in:
 - `operator_role_arns`: optional extra roles allowed to run sessions. Terraform always creates its own `<project>-session-operator` role as well.
 - `endpoint_public_access`, `endpoint_public_access_cidrs`: see section 2.
 - `android_desired_size`: the number of concurrent devices you want ready; one node serves one emulator. Set to 0 if you only need workload Pods.
-- `build_instance_type`, `build_volume_size`, `build_desired_size`: the node group for build/run workload Pods. No KVM is needed there, so any family works; size memory for your largest build and the volume for image layers plus every Pod's workspace. The verified deployment used `r7i.2xlarge` with a 300 GiB volume. In Seoul, where nested-virtualization instance types may be scarce, this node group is the one that matters.
+- `build_instance_type`, `build_volume_size`, `build_desired_size`: the node group for build/run workload Pods. No KVM is needed there, so any family works; size memory for your largest build and the volume for image layers plus every Pod's workspace. The verified deployment used `r7i.2xlarge` with a 300 GiB volume. For a backend-only deployment set `android_desired_size = 0`; this node group is the one that matters.
 - `sandbox_recordings_access`: leave `false`.
 
 ```bash
@@ -477,7 +477,18 @@ Expired AWS credentials surface as `401 Unauthorized` or `The security token inc
 Measured behaviour:
 
 - Runtime invocation, Pod start and build times in the reports are single-run measurements, not guarantees.
-- Verified in us-east-1. For Seoul, confirm AgentCore Runtime and the `bedrock-agentcore` PrivateLink service are available there and use the `apac.` inference profile ids.
+- Verified in us-east-1 only. The Seoul (ap-northeast-2) prerequisites were checked against the AWS documentation and the account on 2026-09-14:
+
+| Prerequisite | Seoul | How checked |
+|---|---|---|
+| AgentCore Runtime (microVM), Code Interpreter | Available | Supported Regions table; control plane answers in the region |
+| AgentCore Runtime Instances | Not available (nine regions, Seoul not among them) | Supported Regions table, GA announcement |
+| PrivateLink `com.amazonaws.ap-northeast-2.bedrock-agentcore` plus the ten other endpoints the runtime root creates | Available | `aws ec2 describe-vpc-endpoint-services` |
+| `m8i.2xlarge` (nested virtualization), `r7i.2xlarge`, `m6i.large` | Offered | `aws ec2 describe-instance-type-offerings` |
+| EKS 1.35 | Supported | `aws eks describe-cluster-versions` |
+| Claude Opus 5 and Sonnet 5 | Only through the `global.` cross-region inference profile; there is no `apac.` profile for Claude 5 | `aws bedrock list-inference-profiles` |
+
+  To deploy in Seoul set `region = "ap-northeast-2"` in every root, set `CWE_AGENT_MODEL` and `CWE_JUDGE_MODEL` to `global.anthropic.claude-opus-5`, and add `global.anthropic.claude-opus-5*` to `bedrock_model_ids` in the foundation root so the operator policy allows it. A `global.` profile routes inference to any commercial region, so confirm that is acceptable for the code being sent to the model. Nothing else in the stack is region specific; the end-to-end run itself has not been repeated there.
 - The read-only root filesystem default was added after the 2026-09-14 run and has unit coverage but no live run yet; the first workload session on a new toolchain image is where it would show.
 
 What a production platform would add:

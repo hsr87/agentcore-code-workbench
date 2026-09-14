@@ -18,7 +18,8 @@ workload_image = "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/cwe-eks-workload-agent
 # Sticky sessions: the sandbox must outlive the microVM, so CWE_SESSION_TIMEOUT_SECONDS is set to at least this value.
 idle_runtime_session_timeout = 1800
 max_lifetime                 = 28800
-# Seoul (ap-northeast-2) has no Runtime Instances; microVM + EKS is the whole story there. Bedrock cross-region
-# inference profiles use the apac. prefix, so also set the model ids and widen bedrock_model_ids in the foundation root:
+# Seoul (ap-northeast-2) has no Runtime Instances; microVM + EKS is the whole story there. Claude Opus 5 is served
+# there only through the global. cross-region inference profile (there is no apac. profile for Claude 5), so set the
+# model ids and add "global.anthropic.claude-opus-5*" to bedrock_model_ids in the foundation root:
 # region              = "ap-northeast-2"
-# runtime_environment = { CWE_AGENT_MODEL = "apac.anthropic.claude-opus-5", CWE_JUDGE_MODEL = "apac.anthropic.claude-opus-5" }
+# runtime_environment = { CWE_AGENT_MODEL = "global.anthropic.claude-opus-5", CWE_JUDGE_MODEL = "global.anthropic.claude-opus-5" }

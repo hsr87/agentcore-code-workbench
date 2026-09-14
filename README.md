@@ -6,7 +6,7 @@ Run a coding agent on Amazon Bedrock AgentCore and still build, run and verify s
 
 ## The problem
 
-A Code Interpreter or Runtime microVM is fixed at 2 vCPU, 8 GB of memory and about 9 GB of disk, and those limits cannot be raised. Runtime Instances (EC2-backed) are not available in every region, including Seoul. Large builds fail there with out-of-memory and out-of-disk errors, and an emulator cannot run there at all because there is no KVM.
+A Code Interpreter microVM is fixed at 2 vCPU, 8 GB of memory and 10 GB of disk; a Runtime microVM has the same 2 vCPU and 8 GB with 1 GB of session storage. None of these limits can be raised. Runtime Instances (EC2-backed) are offered in nine regions and not in Seoul. Large builds fail there with out-of-memory and out-of-disk errors, and an emulator cannot run there at all because there is no KVM.
 
 The answer is not to build in the microVM. The agent stays on AgentCore; a `WorkloadProfile` gives its session one EKS Pod with the CPU, memory, disk and toolchain image the job needs, and the agent drives it through tools. The same mechanism runs one Android emulator per Job on a KVM-enabled node group.
 
@@ -59,7 +59,7 @@ Private EKS API by default, Secrets envelope-encrypted with a customer-managed K
 
 ## Known gaps
 
-One namespace and one operator role (no per-user tenancy). Workspaces and build caches live in `emptyDir` and vanish with the Pod. No built-in Git credential path to the Pod. No autoscaler. Pod egress is public HTTPS only, so internal artifact repositories need an explicit rule. The agent loop is the Claude Agent SDK; the tool layer is MCP and can serve another agent, but no other adapter ships. Verified in us-east-1 only.
+One namespace and one operator role (no per-user tenancy). Workspaces and build caches live in `emptyDir` and vanish with the Pod. No built-in Git credential path to the Pod. No autoscaler. Pod egress is public HTTPS only, so internal artifact repositories need an explicit rule. The agent loop is the Claude Agent SDK; the tool layer is MCP and can serve another agent, but no other adapter ships. Verified in us-east-1 only; Seoul prerequisites are checked in GUIDE.md section 8.
 
 ## Layout
 

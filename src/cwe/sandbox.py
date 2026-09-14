@@ -78,7 +78,7 @@ class AgentCoreSandbox:
     """A thin wrapper around bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter.
 
     Sandbox spec (as of 2026-09, managed aws.codeinterpreter.v1):
-      Linux aarch64, 2 vCPU, 8 GB RAM, ~9 GB disk, Python 3.12, Node 24, gcc. No Docker.
+      Linux aarch64, 2 vCPU, 8 GB RAM, 10 GB disk, Python 3.12, Node 24, gcc. No Docker.
     """
 
     def __init__(self, region: str, identifier: str = "aws.codeinterpreter.v1", timeout_seconds: int = 1800):

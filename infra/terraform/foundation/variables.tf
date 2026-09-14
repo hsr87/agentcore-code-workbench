@@ -102,7 +102,7 @@ variable "recordings_prefix" {
   }
 }
 variable "bedrock_model_ids" {
-  description = "Models the operator role may invoke. Narrower than a wildcard over every Bedrock model."
+  description = "Models the operator role may invoke, as foundation-model and inference-profile name patterns. Narrower than a wildcard over every Bedrock model. Add the profile prefix your region offers, e.g. global.anthropic.claude-opus-5* for Seoul."
   type        = list(string)
   default     = ["anthropic.claude-opus-5*", "us.anthropic.claude-opus-5*"]
 }

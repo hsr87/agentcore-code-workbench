@@ -28,7 +28,7 @@ variable "vpc_id" {
   type        = string
 }
 variable "subnet_ids" {
-  description = "Existing private subnets (with NAT) for the Runtime ENIs: the Runtime needs Bedrock, S3, STS, ECR and the EKS API. At least two AZs. Ignored when private_subnets creates them."
+  description = "Existing private subnets for the Runtime ENIs, dedicated to the Runtime: do not reuse the EKS node subnets, or orchestrator_cidrs would admit every Pod in the cluster to the agent port. At least two AZs. Ignored when private_subnets creates them."
   type        = list(string)
   default     = []
   validation {
