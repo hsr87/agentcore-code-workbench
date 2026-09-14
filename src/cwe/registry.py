@@ -291,8 +291,10 @@ class DynamoRegistry:
         cond = self._condition(rid)
         values = {":record": {"S": json.dumps(data)}, ":session_id": {"S": str(data.get("session_id", ""))},
                   ":updated_at": {"N": str(data["updated_at"])}, ":expires_at": {"N": str(data["expires_at"])}, **cond.get("values", {})}
+        # `record` is a DynamoDB reserved word: address it through ExpressionAttributeNames.
         kwargs: dict[str, Any] = {"TableName": self.table, "Key": {"runtime_session_id": {"S": validate_runtime_session_id(rid)}},
-                                  "UpdateExpression": "SET record = :record, session_id = :session_id, updated_at = :updated_at, expires_at = :expires_at",
+                                  "UpdateExpression": "SET #record = :record, session_id = :session_id, updated_at = :updated_at, expires_at = :expires_at",
+                                  "ExpressionAttributeNames": {"#record": "record"},
                                   "ExpressionAttributeValues": values}
         if cond:
             kwargs["ConditionExpression"] = cond["ConditionExpression"]
@@ -309,7 +311,8 @@ class DynamoRegistry:
             return
         # Under a lease keep the item (and its lease attributes) but drop the session state; TTL removes the rest.
         try:
-            self.client.update_item(TableName=self.table, Key=key, UpdateExpression="REMOVE record, session_id",
+            self.client.update_item(TableName=self.table, Key=key, UpdateExpression="REMOVE #record, session_id",
+                                    ExpressionAttributeNames={"#record": "record"},
                                     ConditionExpression=cond["ConditionExpression"], ExpressionAttributeValues=cond["values"])
         except self.client.exceptions.ConditionalCheckFailedException as e:
             raise RuntimeError("session lease lost; registry delete refused") from e

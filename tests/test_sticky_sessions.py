@@ -112,8 +112,20 @@ class FakeDynamo:
             return item.get("lease_owner") == values[":owner"]
         raise NotImplementedError(expr)
 
-    def update_item(self, TableName, Key, UpdateExpression, ExpressionAttributeValues=None, ConditionExpression=None, ReturnValues=None):
+    RESERVED = {"record", "name", "status", "value", "count", "size", "type", "key", "data"}   # a few of DynamoDB's reserved words
+
+    def update_item(self, TableName, Key, UpdateExpression, ExpressionAttributeValues=None, ConditionExpression=None, ReturnValues=None,
+                    ExpressionAttributeNames=None):
         self.calls.append(UpdateExpression)
+        # Like the service: a bare reserved word in an expression is a ValidationException; #aliases must be declared.
+        for token in re.findall(r"[A-Za-z_#][A-Za-z0-9_]*", re.sub(r":[A-Za-z_][A-Za-z0-9_]*", "", UpdateExpression)):
+            if token.startswith("#"):
+                if token not in (ExpressionAttributeNames or {}):
+                    raise ValueError(f"undeclared attribute name {token}")
+            elif token.lower() in self.RESERVED:
+                raise ValueError(f"Invalid UpdateExpression: Attribute name is a reserved keyword; reserved keyword: {token}")
+        for alias, attr in (ExpressionAttributeNames or {}).items():
+            UpdateExpression = UpdateExpression.replace(alias, attr)
         rid = Key["runtime_session_id"]["S"]
         item = self.items.get(rid, {"runtime_session_id": Key["runtime_session_id"]})
         values = ExpressionAttributeValues or {}
