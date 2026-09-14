@@ -115,6 +115,7 @@ Values to fill in:
 - `endpoint_public_access`, `endpoint_public_access_cidrs`: see section 2.
 - `android_desired_size`: the number of concurrent devices you want ready; one node serves one emulator. Set to 0 if you only need workload Pods.
 - `build_instance_type`, `build_volume_size`, `build_desired_size`: the node group for build/run workload Pods. No KVM is needed there, so any family works; size memory for your largest build and the volume for image layers plus every Pod's workspace. The verified deployment used `r7i.2xlarge` with a 300 GiB volume. For a backend-only deployment set `android_desired_size = 0`; this node group is the one that matters.
+- `network_policy_enforcing_mode`: leave `standard` for the first apply. In `strict` mode every new Pod is default-deny until a policy selects it, and the CoreDNS policy only exists after the platform stage, so a fresh cluster created in strict mode never gets a healthy CoreDNS and the `coredns` addon times out. You switch to `strict` in 3.3.
 - `sandbox_recordings_access`: leave `false`.
 
 ```bash
@@ -165,6 +166,15 @@ kubectl get nodes -l cwe/workload=android \
 ```
 
 The last command must show `1` in the KVM column for every Android node. If it shows `<none>`, check `kubectl -n kube-system logs daemonset/cwe-kvm` and `/dev/kvm` on the node, and confirm nested virtualization is set on the current launch template version.
+
+Now that the namespace policies and the CoreDNS policy exist, turn on strict enforcement so that every new Pod starts default-deny instead of open until its policy is reconciled:
+
+```bash
+sed -i '' 's/^network_policy_enforcing_mode.*/network_policy_enforcing_mode = "strict"/' infra/terraform/foundation/terraform.tfvars
+./scripts/deploy.sh --stage foundation --apply        # updates the vpc-cni addon only
+kubectl -n kube-system rollout status daemonset/aws-node --timeout=300s
+kubectl -n kube-system get pods -l k8s-app=kube-dns    # both Running and Ready
+```
 
 ### 3.4 Images and environment file
 
@@ -430,6 +440,7 @@ Capacity: one KVM slot per Android node, so two concurrent devices need `android
 | `kubectl ... failed` | `CWE_EKS_CONTEXT`, `KUBECONFIG`, AWS role, EKS access entry, namespace RBAC, API reachability |
 | Workload Pod `Pending` | `build_desired_size`, node memory versus `WorkloadProfile.memory`, `ephemeral_storage` versus `build_volume_size`, namespace quota |
 | Android Pod `Pending` | `devic.es/kvm` capacity, node count, taints and tolerations |
+| CoreDNS `CrashLoopBackOff` on a fresh cluster, `coredns` addon stuck in `CREATING` | `network_policy_enforcing_mode = "strict"` before the platform stage created the `cwe-coredns` policy; apply the platform stage (CoreDNS recovers within a minute) and re-run the foundation apply, or create the cluster in `standard` mode first |
 | `ImagePullBackOff` | ECR image tag, node pull role, NAT or registry reachability |
 | Agent 401 / 403 | Token or `x-cwe-session` mismatch, or a stale tunnel from a previous session |
 | Emulator boot timeout | Emulator logs, `/dev/kvm`, whether the image serves ADB on 5555 |

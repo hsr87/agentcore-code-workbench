@@ -85,11 +85,15 @@ class _S3Store:
 
     def __init__(self, uri: str, region: str):
         import boto3
+        from botocore.config import Config
 
         assert uri.startswith("s3://")
         bucket, _, prefix = uri[5:].partition("/")
         self.bucket, self.prefix = bucket, prefix.strip("/")
-        self.s3 = boto3.client("s3", region_name=region)
+        # Presigned URLs are handed to Pods in any region. Pin SigV4 and virtual-host addressing so the URL names the
+        # bucket's regional endpoint; the default can emit the global endpoint with a regional signature scope, which S3
+        # rejects with SignatureDoesNotMatch outside us-east-1.
+        self.s3 = boto3.client("s3", region_name=region, config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
         self._cache: dict[str, list[str]] = {}
         self._lock = threading.Lock()
 

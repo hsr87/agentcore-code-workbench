@@ -74,7 +74,7 @@ Local access uses `kubectl port-forward` through the Kubernetes API, which requi
 
 `CWE_EKS_ACCESS=pod` exists for an approved in-cluster orchestrator. The network policy admits traffic to port 8080 only from Pods labelled `cwe/role=orchestrator` in namespaces labelled `app.kubernetes.io/part-of=cwe`. The `platform` root does not create that orchestrator Deployment. The `runtime` root deploys AgentCore Runtime in VPC mode and adds the Runtime security group to the `orchestrator_cidrs` ingress rule, which is how the Runtime calls private Pod IPs directly.
 
-The VPC CNI runs with strict network policy enforcement. Device Pods may reach DNS and public HTTPS only, with RFC1918 and link-local destinations excluded, which also blocks instance metadata. Private package repositories or S3 VPC endpoints require an explicit approved rule. CoreDNS has its own policy.
+The VPC CNI runs with network policy enforcement; the cluster is created in standard mode and switched to strict once the platform stage has created the policies, because in strict mode a Pod without a policy (CoreDNS on a fresh cluster) is default-deny. Device Pods may reach DNS and public HTTPS only, with RFC1918 and link-local destinations excluded, which also blocks instance metadata. Private package repositories or S3 VPC endpoints require an explicit approved rule. CoreDNS has its own policy.
 
 The `cwe-operators` group may create, read and delete Jobs, read Pods and their logs, create port-forwards, and create Secrets in the lab namespace. It cannot read Secrets directly, but creating a Job is enough to mount any Secret in that namespace, so an operator is a trusted role. A shared operator role does not isolate one user's sessions from another's.
 

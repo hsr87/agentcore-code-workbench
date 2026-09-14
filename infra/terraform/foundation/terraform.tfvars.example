@@ -16,6 +16,9 @@ recordings_prefix     = "cwe"
 android_instance_type = "m8i.2xlarge"
 android_desired_size  = 1
 android_max_size      = 4
+# Network policy enforcement. Create the cluster in standard mode; after the platform stage exists, set "strict"
+# and re-apply so every new Pod starts default-deny (see GUIDE.md 3.3).
+network_policy_enforcing_mode = "standard"
 # Build/run workload nodes (no KVM needed). Size memory for your largest build.
 build_instance_type = "r7i.2xlarge"
 build_volume_size   = 300

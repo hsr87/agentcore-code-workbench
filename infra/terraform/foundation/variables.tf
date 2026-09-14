@@ -87,6 +87,15 @@ variable "recordings_bucket_name" {
   type        = string
   default     = null
 }
+variable "network_policy_enforcing_mode" {
+  description = "VPC CNI network policy enforcement. standard: Pods without a policy are open until one selects them. strict: every new Pod starts default-deny, which also blocks CoreDNS (API server, upstream DNS, kubelet probes) until the platform stage has created the cwe-coredns policy, so a fresh cluster must be created in standard mode and switched to strict after the platform apply."
+  type        = string
+  default     = "standard"
+  validation {
+    condition     = contains(["standard", "strict"], var.network_policy_enforcing_mode)
+    error_message = "network_policy_enforcing_mode must be standard or strict."
+  }
+}
 variable "sandbox_recordings_access" {
   description = "Grant the Code Interpreter execution role read/write on the recordings prefix. Off by default: sandbox code is model-written, and with the recordings-store registry it could otherwise read or forge session records."
   type        = bool

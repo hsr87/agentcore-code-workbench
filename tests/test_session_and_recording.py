@@ -81,3 +81,13 @@ def test_store_rejects_path_traversal(tmp_path):
     with pytest.raises(ValueError):
         st.path("sess_ok", "../../evil")
     validate_key("sess_ok", "artifacts/run_1_0001.png")
+
+
+def test_s3_store_pins_sigv4_and_virtual_host_addressing(monkeypatch):
+    """Presigned URLs must name the bucket's regional endpoint, or Pods outside us-east-1 get SignatureDoesNotMatch."""
+    from cwe.recorder import make_store
+
+    store = make_store("s3://example-bucket/prefix", "ap-northeast-2")
+    cfg = store.s3.meta.config
+    assert cfg.signature_version == "s3v4" and cfg.s3["addressing_style"] == "virtual"
+    assert store.s3.meta.region_name == "ap-northeast-2"
