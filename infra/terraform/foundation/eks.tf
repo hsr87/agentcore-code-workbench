@@ -70,8 +70,10 @@ resource "aws_eks_access_policy_association" "admin" {
   policy_arn    = "arn:${local.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   access_scope { type = "cluster" }
 }
+# Extra operator principals. The Terraform-created session-operator role gets its own entry in main.tf, and its
+# ARN is only known after apply, so it must not be part of this for_each set (a fresh apply would fail to plan).
 resource "aws_eks_access_entry" "operator" {
-  for_each          = setsubtract(var.operator_role_arns, toset([var.cluster_admin_role_arn, aws_iam_role.operator.arn]))
+  for_each          = setsubtract(toset(var.operator_role_arns), toset([var.cluster_admin_role_arn]))
   cluster_name      = aws_eks_cluster.main.name
   principal_arn     = each.value
   kubernetes_groups = ["cwe-operators"]

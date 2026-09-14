@@ -31,3 +31,7 @@ external_email.txt
 
 # Customer communications used as input for this work; never part of the release
 issues/
+
+# Personal study notes
+eks_study.md
+.env.seoul
