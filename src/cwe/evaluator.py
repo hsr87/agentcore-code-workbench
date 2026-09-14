@@ -180,11 +180,30 @@ agent printed about test results. Output must be valid JSON matching:
 Return the JSON object only, with no surrounding text."""
 
 
-class LLMJudgeEvaluator:
-    def __init__(self, region: str, model: str = "anthropic.claude-opus-5"):
-        from anthropic import AnthropicBedrockMantle
 
-        self.client = AnthropicBedrockMantle(aws_region=region)
+def make_judge_client(region: str):
+    """AnthropicBedrockMantle when its regional endpoint resolves, otherwise AnthropicBedrock (bedrock-runtime)."""
+    import socket
+    from urllib.parse import urlsplit
+
+    from anthropic import AnthropicBedrock, AnthropicBedrockMantle
+
+    client = AnthropicBedrockMantle(aws_region=region)
+    host = urlsplit(str(client.base_url)).hostname or ""
+    try:
+        socket.getaddrinfo(host, 443)
+        return client
+    except OSError:
+        log.info("no Bedrock Mantle endpoint in %s (%s); using bedrock-runtime for the judge", region, host)
+        return AnthropicBedrock(aws_region=region)
+
+
+class LLMJudgeEvaluator:
+    """LLM judge on Bedrock. Uses the Bedrock Mantle endpoint where the region has one and falls back to the
+    bedrock-runtime endpoint elsewhere (Seoul had no Mantle endpoint on 2026-09-14); both speak the Messages API."""
+
+    def __init__(self, region: str, model: str = "anthropic.claude-opus-5"):
+        self.client = make_judge_client(region)
         self.model = model
 
     def evaluate(self, task: str, transcript: str, criteria: EvalCriteria, verification: dict[str, Any] | None = None) -> EvalItem:

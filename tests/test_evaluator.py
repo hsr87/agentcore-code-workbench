@@ -30,3 +30,23 @@ def test_rule_checks():
 def test_extract_json_tolerates_fences():
     assert _extract_json('```json\n{"score": 0.9, "passed": true, "explanation": "ok"}\n```')["score"] == 0.9
     assert _extract_json('Here: {"score": 0.1, "passed": false, "explanation": "x"} bye')["passed"] is False
+
+
+def test_judge_client_falls_back_to_bedrock_runtime_without_a_mantle_endpoint(monkeypatch):
+    import socket
+
+    from anthropic import AnthropicBedrock, AnthropicBedrockMantle
+
+    from cwe.evaluator import make_judge_client
+
+    real = socket.getaddrinfo
+
+    def only_bedrock_runtime(host, *a, **k):
+        if host.startswith("bedrock-mantle."):
+            raise socket.gaierror("no such host")
+        return real(host, *a, **k) if False else []
+
+    monkeypatch.setattr(socket, "getaddrinfo", only_bedrock_runtime)
+    assert isinstance(make_judge_client("ap-northeast-2"), AnthropicBedrock)
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [])
+    assert isinstance(make_judge_client("us-east-1"), AnthropicBedrockMantle)
