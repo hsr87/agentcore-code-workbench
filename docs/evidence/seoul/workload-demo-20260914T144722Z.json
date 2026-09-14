@@ -1,0 +1,54 @@
+{
+  "started_at": "20260914T144722Z",
+  "stages": {
+    "sandbox": {
+      "session_id": "sess_1b4137b1f9f2",
+      "sandbox": "01M2G665QXW8KX4P8SS6SPCTBX",
+      "t": 2.5
+    },
+    "workload": {
+      "job": "cwe-sess-1b4137b1f9f2-e5ac4b-0",
+      "cpus": 8,
+      "mem_gib": 61.8,
+      "disk_free_gib": 293.9,
+      "t": 24.8
+    },
+    "sync": {
+      "bytes": 44854,
+      "files": 23,
+      "seconds": 0.06,
+      "t": 25.5
+    },
+    "build": {
+      "exit_code": 0,
+      "seconds": 20.02,
+      "tail": "{\"exit_code\": 0, \"output\": \"\", \"seconds\": 20.02, \"timed_out\": false}",
+      "t": 45.8
+    },
+    "service": {
+      "health": 200,
+      "health_body": "{\"status\":\"ok\"}",
+      "order": 200,
+      "order_body": "{\"id\":\"1001\",\"status\":\"shipped\"}",
+      "t": 46.2,
+      "ok": true
+    },
+    "agent": {
+      "status": "succeeded",
+      "executions": 7,
+      "cost_usd": 0.0999,
+      "turns": 13,
+      "response": "ession was the hardcoded `\"degraded\"` status literal in `Main.health()`, which both the unit test and the `/health` HTTP context use.\n\n**Verification on the workload Pod:**\n- `remote_sync_workspace` \u2192 23 files copied.\n- `./gradlew --no-daemon -q test installDist` \u2192 exit 0 (both `healthReportsOk` and `knownOrderIsFound` pass; previously `healthReportsOk` failed).\n- Started `svc` with `PORT=8081 build/install/order-service/bin/order-service`; log shows `order-service listening on 8081`.\n- `remote_probe` port 8081 `/health` \u2192 HTTP 200, body `{\"status\":\"ok\"}` (contains \"ok\"). Service then stopped.",
+      "t": 81.1
+    },
+    "harness_verify": {
+      "tests_exit": 0,
+      "health": 200,
+      "body": "{\"status\":\"ok\"}",
+      "t": 93.0,
+      "ok": true
+    }
+  },
+  "passed": true,
+  "events": "s3://cwe-icn-recordings-<account-id>-ap-northeast-2/cwe/sess_1b4137b1f9f2/events.jsonl"
+}

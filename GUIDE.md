@@ -1,6 +1,6 @@
 # End-to-end guide
 
-Everything needed to take this repository from a clean checkout to a working deployment, run sessions on it, host the agent on AgentCore Runtime, operate it, and tear it down. [README.md](README.md) is the summary; [docs/architecture.md](docs/architecture.md) explains the design; the two verification reports ([Android](docs/verification-eks.md), [workload and Runtime](docs/verification-workload.md)) show what was actually run.
+Everything needed to take this repository from a clean checkout to a working deployment, run sessions on it, host the agent on AgentCore Runtime, operate it, and tear it down. [README.md](README.md) is the summary; [docs/architecture.md](docs/architecture.md) explains the design; the three verification reports ([Android](docs/verification-eks.md), [workload and Runtime](docs/verification-workload.md), [fresh deployment in Seoul](docs/verification-seoul.md)) show what was actually run.
 
 Contents
 
@@ -488,7 +488,7 @@ Expired AWS credentials surface as `401 Unauthorized` or `The security token inc
 Measured behaviour:
 
 - Runtime invocation, Pod start and build times in the reports are single-run measurements, not guarantees.
-- Verified in us-east-1 only. The Seoul (ap-northeast-2) prerequisites were checked against the AWS documentation and the account on 2026-09-14:
+- Verified in us-east-1, and deployed from scratch and re-run in Seoul (ap-northeast-2) on 2026-09-14 ([report](docs/verification-seoul.md)). The Seoul prerequisites, checked against the AWS documentation and the account:
 
 | Prerequisite | Seoul | How checked |
 |---|---|---|
@@ -499,8 +499,8 @@ Measured behaviour:
 | EKS 1.35 | Supported | `aws eks describe-cluster-versions` |
 | Claude Opus 5 and Sonnet 5 | Only through the `global.` cross-region inference profile; there is no `apac.` profile for Claude 5 | `aws bedrock list-inference-profiles` |
 
-  To deploy in Seoul set `region = "ap-northeast-2"` in every root, set `CWE_AGENT_MODEL` and `CWE_JUDGE_MODEL` to `global.anthropic.claude-opus-5`, and add `global.anthropic.claude-opus-5*` to `bedrock_model_ids` in the foundation root so the operator policy allows it. A `global.` profile routes inference to any commercial region, so confirm that is acceptable for the code being sent to the model. Nothing else in the stack is region specific; the end-to-end run itself has not been repeated there.
-- The read-only root filesystem default was added after the 2026-09-14 run and has unit coverage but no live run yet; the first workload session on a new toolchain image is where it would show.
+  To deploy in Seoul set `region = "ap-northeast-2"` in every root, set `CWE_AGENT_MODEL` and `CWE_JUDGE_MODEL` to `global.anthropic.claude-opus-5`, and add `global.anthropic.claude-opus-5*` to `bedrock_model_ids` in the foundation root so the operator policy allows it. A `global.` profile routes inference to any commercial region, so confirm that is acceptable for the code being sent to the model. Nothing else in the stack is region specific: the Seoul run reached the same results as us-east-1 (Gradle build on the Pod, agent fix, emulator boot, Runtime reattach after a 420 s idle, 22 of 22 security checks). The Claude Agent SDK also looks for a default Sonnet model in the region; set `ANTHROPIC_DEFAULT_SONNET_MODEL=global.anthropic.claude-sonnet-5` to avoid its fallback warning.
+- The read-only root filesystem default was added after the us-east-1 run; the Seoul run exercised it live (Gradle build, service start, agent fix, and the `workload_read_only_root` audit check).
 
 What a production platform would add:
 

@@ -1,0 +1,23 @@
+{
+  "started_at": "20260914T144236Z",
+  "stages": {
+    "sandbox": {
+      "session_id": "sess_0d1bee2c3429",
+      "sandbox": "01M2G5XFJD319GJ8CVTEB1035Z",
+      "t": 6.3
+    },
+    "workload": {
+      "job": "cwe-sess-0d1bee2c3429-025721-0",
+      "cpus": 8,
+      "mem_gib": 61.8,
+      "disk_free_gib": 293.7,
+      "t": 29.5
+    },
+    "error": {
+      "error": "workload agent /fetch failed (500): {\"error\": \"agent failure: HTTPError\"}",
+      "t": 31.7
+    }
+  },
+  "passed": false,
+  "events": "s3://cwe-icn-recordings-<account-id>-ap-northeast-2/cwe/sess_0d1bee2c3429/events.jsonl"
+}

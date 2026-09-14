@@ -1,0 +1,14 @@
+runtime session demo-3c7073a1e404b528bb2fc1f994eeff5a
+"2\r\n               total        used        free      shared  buff/cache   available\r\nMem:               7           0           7           0           0           7\r\nSwap:              0           0           0\r\nFilesystem               Size  Used Avail Use% Mounted on\r\noverlayfs:/overlay/root  9.7G   33M  9.2G   1% /\r\n"
+workload {"kind": "workload", "session_id": "sess_b0502a882c9b", "job": "cwe-sess-b0502a882c9b-b9624a-0", "pod_ip": "172.31.10.196", "profile": {"name": "build", "image": "<account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/cwe-icn-workload-agent:v1", "cpu": "4", "cpu_limit": null, "memory": "16Gi", "ephemeral_storage": "50Gi", "env": {}, "boot_timeout": 600, "job_timeout_seconds": 28800, "node_selector": {"cwe/workload": "build"}, "toleration_key": "cwe/build", "arch": "amd64", "inject_agent": false, "read_only_root": true, "tmp_size": "4Gi"}} health {"ok": true, "work": "/opt/cwe/work", "uptime_seconds": 3.3, "cpus": 8, "disk_free_bytes": <account-id>, "disk_total_bytes": <account-id>, "mem_total_bytes": 66331783168, "mem_available_bytes": 65075482624, "procs": []}
+sync {"bytes": 170, "files": 2, "dest": ".", "seconds": 0.06, "snapshot_id": "snap_81dc2e85d89e"}
+build exit 0 /bin/sh: 1: ./gradlew: not found
+total 4
+drwxrwsrwx+   2 root   ubuntu 23 Sep 14 14:58 .
+drwxr-xr-x+   1 ubuntu ubuntu 19 Sep 14 07:03 ..
+-rw-r--r--+   1 ubuntu ubuntu  7 Sep 14 14:58 README.md
+
+sleeping 420s so the microVM can be released ...
+after wait: same session True same Pod True new microVM process True {"before": {"id": "35958521", "started_at": 1789397902.92928}, "after": {"id": "081238c8", "started_at": 1789397894.0126958}}
+workspace still there after wait: True
+{"closed": "sess_b0502a882c9b"}

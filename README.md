@@ -2,7 +2,7 @@
 
 Run a coding agent on Amazon Bedrock AgentCore and still build, run and verify software that a microVM cannot hold. The agent orchestrates from AgentCore (Code Interpreter for the sandbox, Runtime for hosting). Anything heavy runs in a session-owned Pod on Amazon EKS: a Gradle build of a large Java service, the service itself under integration tests, or an Android emulator. Every action is recorded, the result is scored, and the infrastructure is Terraform.
 
-> Reference architecture with a working proof, not a hosted product. Verified on real AWS in us-east-1: Android device lab on 2026-09-11 ([report](docs/verification-eks.md)), workload Pods, Runtime in VPC mode and reattach after a microVM swap on 2026-09-14 ([report](docs/verification-workload.md)). The REST API key and the Kubernetes operator role are a trusted operator boundary, not per-user isolation.
+> Reference architecture with a working proof, not a hosted product. Verified on real AWS in us-east-1: Android device lab on 2026-09-11 ([report](docs/verification-eks.md)), workload Pods, Runtime in VPC mode and reattach after a microVM swap on 2026-09-14 ([report](docs/verification-workload.md)). The whole stack was then deployed from scratch and re-run in Seoul (ap-northeast-2) the same day ([report](docs/verification-seoul.md)). The REST API key and the Kubernetes operator role are a trusted operator boundary, not per-user isolation.
 
 ## The problem
 
@@ -59,7 +59,7 @@ Private EKS API by default, Secrets envelope-encrypted with a customer-managed K
 
 ## Known gaps
 
-One namespace and one operator role (no per-user tenancy). Workspaces and build caches live in `emptyDir` and vanish with the Pod. No built-in Git credential path to the Pod. No autoscaler. Pod egress is public HTTPS only, so internal artifact repositories need an explicit rule. The agent loop is the Claude Agent SDK; the tool layer is MCP and can serve another agent, but no other adapter ships. Verified in us-east-1 only; Seoul prerequisites are checked in GUIDE.md section 8.
+One namespace and one operator role (no per-user tenancy). Workspaces and build caches live in `emptyDir` and vanish with the Pod. No built-in Git credential path to the Pod. No autoscaler. Pod egress is public HTTPS only, so internal artifact repositories need an explicit rule. The agent loop is the Claude Agent SDK; the tool layer is MCP and can serve another agent, but no other adapter ships. Verified in us-east-1 and Seoul; other regions need the model ids checked (GUIDE.md section 8).
 
 ## Layout
 

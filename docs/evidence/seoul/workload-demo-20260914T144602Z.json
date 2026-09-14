@@ -1,0 +1,39 @@
+{
+  "started_at": "20260914T144602Z",
+  "stages": {
+    "sandbox": {
+      "session_id": "sess_637f5ec74ef0",
+      "sandbox": "01M2G63QRCAXNFAM17X8VM24YW",
+      "t": 2.3
+    },
+    "workload": {
+      "job": "cwe-sess-637f5ec74ef0-354849-0",
+      "cpus": 8,
+      "mem_gib": 61.8,
+      "disk_free_gib": 293.9,
+      "t": 24.7
+    },
+    "sync": {
+      "bytes": 44855,
+      "files": 23,
+      "seconds": 0.07,
+      "t": 25.7
+    },
+    "build": {
+      "exit_code": 0,
+      "seconds": 20.86,
+      "tail": "{\"exit_code\": 0, \"output\": \"\", \"seconds\": 20.86, \"timed_out\": false}",
+      "t": 47.2
+    },
+    "service": {
+      "health": 200,
+      "health_body": "{\"status\":\"ok\"}",
+      "order": 200,
+      "order_body": "{\"id\":\"1001\",\"status\":\"shipped\"}",
+      "t": 47.5,
+      "ok": true
+    }
+  },
+  "passed": true,
+  "events": "s3://cwe-icn-recordings-<account-id>-ap-northeast-2/cwe/sess_637f5ec74ef0/events.jsonl"
+}

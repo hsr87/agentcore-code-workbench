@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "checks": {
+    "eks_api_not_world_open": true,
+    "eks_private_endpoint_enabled": true,
+    "eks_secrets_encrypted": true,
+    "eks_audit_logging_enabled": true,
+    "imdsv2_required": true,
+    "metadata_hop_limit_one": true,
+    "nested_virtualization_enabled": true,
+    "nodes_no_world_open_ingress": true,
+    "s3_public_access_blocked": true,
+    "s3_versioning": true,
+    "s3_encryption": true,
+    "network_policies_present": true,
+    "session_sa_token_disabled": true,
+    "session_containers_nonprivileged": true,
+    "session_no_privilege_escalation": true,
+    "session_all_capabilities_dropped": true,
+    "session_no_hostpath": true,
+    "session_no_host_namespaces": true,
+    "workload_non_root": true,
+    "workload_read_only_root": true,
+    "workload_token_from_secret_only": true,
+    "workload_metadata_network_blocked": true
+  },
+  "pods_checked": [
+    "cwe-workload"
+  ]
+}

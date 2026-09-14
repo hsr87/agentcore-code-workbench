@@ -1,0 +1,11 @@
+session: sess_fe3cfcdb75a0
+starting emulator host (first boot takes several minutes) ...
+device: http://127.0.0.1:56729 {'serial': '127.0.0.1:5555', 'booted': True, 'devices': ['127.0.0.1:5555'], 'session_bound': True, 'adb_devices': 'List of devices attached\n127.0.0.1:5555\tdevice\nemulator-5556\tdevice\n\n'}
+ui nodes: ['Search settings', 'On-body detection', "Keep your device unlocked while it's on you", 'Add another email account', 'Set up your personal or work email', 'Network &amp; internet', 'Wi‑Fi, mobile, data usage, and hotspot', 'Connected devices', 'Bluetooth, Android Auto', 'Apps &amp; notifications', 'Recent apps, default apps', 'Battery']
+android version: 11
+EVAL: score=0.82 threshold=0.7 PASS
+  - [rule] device_action_count: 1.00 PASS - 5 device actions (min 3)
+  - [rule] no_errors: 1.00 PASS - 0 of 5 executions errored
+  - [llm] llm_judge: 0.45 FAIL - The agent did launch com.android.settings via monkey and captured a screenshot, so Settings was plausibly opened, and it reported an Android version of 11. However, it never navigated to 'About emulat
+artifacts: ['s3://cwe-icn-recordings-<account-id>-ap-northeast-2/cwe/sess_fe3cfcdb75a0/artifacts/run_f63015d39e7d_0001.png', 's3://cwe-icn-recordings-<account-id>-ap-northeast-2/cwe/sess_fe3cfcdb75a0/artifacts/run_f63015d39e7d_0004.png']
+exit 0
