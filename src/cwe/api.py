@@ -10,6 +10,8 @@
   POST   /v1/sessions/{id}/files               upload files
   GET    /v1/sessions/{id}/files/{path}        download a file
   POST   /v1/sessions/{id}/message             hand a task to the agent
+  POST   /v1/sessions/{id}/workload            start the EKS build/run Pod for this session
+  POST   /v1/sessions/{id}/remote              exec / start / stop / logs / probe / sync on that Pod
   POST   /v1/sessions/{id}/snapshots           create a snapshot
   POST   /v1/sessions/{id}/evaluate            evaluate a run
   GET    /v1/sessions/{id}/events              read the recorded events (replay input)
@@ -97,6 +99,27 @@ class EvaluateRequest(BaseModel):
     task: str = ""
     run_id: str | None = None
     use_llm: bool | None = None
+
+
+class WorkloadRequest(BaseModel):
+    """Start the session's EKS build/run Pod. Fields are WorkloadProfile's; omit for the configured defaults."""
+    profile: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteRequest(BaseModel):
+    type: Literal["exec", "start", "stop", "logs", "probe", "sync"] = "exec"
+    input: str = Field(default="", max_length=MAX_INPUT_CHARS)
+    name: str = Field(default="", max_length=40)
+    cwd: str = Field(default=".", max_length=1024)
+    timeout: int = Field(default=600, ge=1, le=4 * 3600)
+    tail: int = Field(default=4000, ge=100, le=200_000)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    path: str = Field(default="/", max_length=2048)
+    method: str = Field(default="GET", max_length=8)
+    body: str | None = Field(default=None, max_length=MAX_INPUT_CHARS)
+    source_dir: str = Field(default=".", max_length=1024)
+    dest: str = Field(default=".", max_length=1024)
+    clean: bool = False
 
 
 def create_app(manager: SessionManager | None = None) -> FastAPI:
@@ -230,6 +253,36 @@ def create_app(manager: SessionManager | None = None) -> FastAPI:
         from cwe.agent import run_task
 
         return run_task(_get(sid), req.text, manager.settings)
+
+    @app.post("/v1/sessions/{sid}/workload")
+    def start_workload(sid: str, req: WorkloadRequest):
+        from cwe.workload import WorkloadProfile
+
+        sess = _get(sid)
+        if sess.workload is None:
+            sess.start_workload(WorkloadProfile.model_validate(req.profile))
+        hosts = sess.registry_record("")["hosts"]
+        desc = next((h for h in hosts if h["kind"] == "workload"), {})
+        return {"session_id": sid, "workload": {k: v for k, v in desc.items() if k != "token"}, "health": sess.workload.health()}
+
+    @app.post("/v1/sessions/{sid}/remote")
+    def remote(sid: str, req: RemoteRequest):
+        sess = _get(sid)
+        if sess.workload is None:
+            raise HTTPException(409, "no workload attached; POST /workload first")
+        if req.type == "exec":
+            return sess.workload_exec(req.input, timeout=req.timeout, cwd=req.cwd, actor="user").model_dump(exclude={"raw"})
+        if req.type == "start":
+            return sess.workload_start(req.name, req.input, cwd=req.cwd, actor="user").model_dump(exclude={"raw"})
+        if req.type == "stop":
+            return sess.workload_stop(req.name, actor="user").model_dump(exclude={"raw"})
+        if req.type == "logs":
+            return sess.workload_logs(req.name, tail=req.tail, actor="user")
+        if req.type == "probe":
+            if req.port is None:
+                raise HTTPException(422, "port is required for probe")
+            return sess.workload_probe(req.port, req.path, req.method, req.body, actor="user")
+        return sess.sync_workspace_to_workload(req.source_dir, req.dest, req.clean, actor="user")
 
     @app.post("/v1/sessions/{sid}/snapshots")
     def snapshot(sid: str, description: str = ""):

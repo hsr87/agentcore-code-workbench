@@ -1,0 +1,37 @@
+# Workload image: your toolchain plus the workload agent.
+#
+# The agent is a single standard-library Python file, so any base image with python3 works.
+# Bring your own toolchain by overriding BASE_IMAGE at build time, for example:
+#   finch build -f device_agent/Dockerfile.workload --build-arg BASE_IMAGE=eclipse-temurin:21-jdk .   # context: repository root
+#   finch build -f device_agent/Dockerfile.workload --build-arg BASE_IMAGE=gradle:8.10-jdk17 .
+# Any image with python3 also works without a rebuild: WorkloadProfile(inject_agent=True) mounts the same
+# file from the Job's Secret. This Dockerfile is for images that should carry the agent permanently.
+# The default is a JDK 17 image for Gradle/Maven services; the wrapper (gradlew/mvnw) in the
+# repository fetches the build tool itself. Pin BASE_IMAGE by digest for production.
+ARG BASE_IMAGE=eclipse-temurin:17-jdk
+FROM ${BASE_IMAGE}
+
+# Debian/Ubuntu bases (the Temurin defaults). For an Amazon Linux base replace this line with
+# `dnf install -y python3 git tar gzip && dnf clean all`.
+RUN if command -v apt-get >/dev/null; then \
+      apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates tar gzip curl \
+      && rm -rf /var/lib/apt/lists/*; \
+    elif command -v dnf >/dev/null; then dnf install -y python3 git tar gzip && dnf clean all; \
+    elif command -v microdnf >/dev/null; then microdnf install -y python3 git tar gzip && microdnf clean all; \
+    fi \
+    && python3 --version
+
+# Non-root, fixed uid so the emptyDir (fsGroup 1000) is writable and Kubernetes can enforce runAsNonRoot.
+RUN (getent group 1000 >/dev/null || groupadd -g 1000 cwe) \
+    && (getent passwd 1000 >/dev/null || useradd -m -u 1000 -g 1000 cwe) \
+    && mkdir -p /opt/cwe/work /opt/cwe/logs /opt/cwe/agent /opt/cwe/cache && chown -R 1000:1000 /opt/cwe
+COPY --chown=1000:1000 src/cwe/workload_agent.py /opt/cwe/agent/workload_agent.py
+
+USER 1000
+ENV HOME=/tmp \
+    WORKLOAD_WORK=/opt/cwe/work \
+    GRADLE_USER_HOME=/opt/cwe/cache/gradle \
+    MAVEN_OPTS=-Dmaven.repo.local=/opt/cwe/cache/m2 \
+    GRADLE_OPTS=-Dorg.gradle.daemon=false
+EXPOSE 8080
+CMD ["python3", "/opt/cwe/agent/workload_agent.py"]

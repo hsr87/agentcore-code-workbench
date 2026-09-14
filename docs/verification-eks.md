@@ -1,6 +1,6 @@
 # Verification report
 
-This codebase is a sample showing that an agent's Android development loop — build, install, interact, run instrumented tests, record the evidence and score the result — can be run on AgentCore Code Interpreter and EKS, deployed with Terraform. What follows was run on real AWS, first on 2026-09-10 and again on 2026-09-11 after the Terraform was hardened (KMS secret encryption, full control-plane logging, IAM policies narrowed to the Claude models and one bucket prefix, encrypted system node volume, TLS-only bucket policy, default-deny network policy); the scope and its limits are stated explicitly.
+This codebase is a sample showing that an agent's Android development loop (build, install, interact, run instrumented tests, record the evidence and score the result) can be run on AgentCore Code Interpreter and EKS, deployed with Terraform. What follows was run on real AWS, first on 2026-09-10 and again on 2026-09-11 after the Terraform was hardened (KMS secret encryption, full control-plane logging, IAM policies narrowed to the Claude models and one bucket prefix, encrypted system node volume, TLS-only bucket policy, default-deny network policy); the scope and its limits are stated explicitly.
 
 ## Deployment under test
 
@@ -35,7 +35,7 @@ Local regression tests: **90 passed**. Terraform `storage`, `foundation` and `pl
 
 The final 2026-09-11 run used only images from the account's ECR: the emulator mirrored from Google's public image under an immutable tag (same digest as the source), and sidecars rebuilt on digest-pinned Amazon Linux 2023 and Temurin bases with `adb` and the Android command-line tools pinned by checksum. ECR scan-on-push reported **no findings** for either sidecar, down from 6 and 57 critical findings on the previous bases.
 
-- [Portable result JSON](evidence/eks/verification.json): measurements, permission checks and file SHA-256 digests, with account identifiers and tokens excluded
+- [Portable result JSON](evidence/eks/verification.json): measurements, permission checks and file SHA-256 digests from the first (2026-09-10) run, with account identifiers and tokens excluded. The 2026-09-11 figures above come from the re-run report and are not repeated in this JSON.
 - [Initial screen](evidence/eks/before.png), [after three taps](evidence/eks/after.png)
 - [Interaction recording](evidence/eks/interaction.mp4), [live stream frame](evidence/eks/live-frame.jpg)
 
@@ -54,7 +54,7 @@ The deployment checker (`infra/verify_eks_security.py`) asserts, against the liv
 
 Separately confirmed: the session role can create Jobs but cannot read Secrets directly or delete nodes, and the device API returns 401 without a token and 403 with the wrong session header. Memory, Evaluations and CloudWatch query permissions are excluded from the default IAM policy.
 
-This is an operator-boundary sample. An operator with namespace access is a trusted principal — creating a Job is enough to mount any Secret in that namespace — so this is not multi-tenant isolation. The node-level KVM device plugin is privileged and deliberately separate from the session Pod.
+This is an operator-boundary sample. An operator with namespace access is a trusted principal (creating a Job is enough to mount any Secret in that namespace), so this is not multi-tenant isolation. The node-level KVM device plugin is privileged and deliberately separate from the session Pod.
 
 ## Scope and limits
 

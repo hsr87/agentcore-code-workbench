@@ -17,9 +17,13 @@ resource "aws_iam_role" "code_interpreter" {
     }]
   })
 }
+# Code inside the sandbox is written by the model. Nothing in this repository needs it to touch S3
+# (snapshots and workspace sync are done by the orchestrator through the Code Interpreter file API),
+# so the execution role gets no S3 access unless sandbox_recordings_access is set.
 resource "aws_iam_role_policy" "code_interpreter" {
-  name = "recordings"
-  role = aws_iam_role.code_interpreter.id
+  count = var.sandbox_recordings_access ? 1 : 0
+  name  = "recordings"
+  role  = aws_iam_role.code_interpreter.id
   policy = jsonencode({
     Version = "2012-10-17", Statement = [
       {
@@ -34,10 +38,10 @@ resource "aws_bedrockagentcore_code_interpreter" "main" {
   name               = "${replace(var.project_name, "-", "_")}_public"
   execution_role_arn = aws_iam_role.code_interpreter.arn
   network_configuration { network_mode = "PUBLIC" }
-  depends_on = [aws_iam_role_policy.code_interpreter]
+  depends_on = [aws_iam_role_policy.code_interpreter] # empty list when the policy is disabled
 }
 resource "aws_ecr_repository" "images" {
-  for_each             = toset(["device-agent", "android-builder", "android-emulator"])
+  for_each             = toset(["device-agent", "android-builder", "android-emulator", "workload-agent", "runtime"])
   name                 = "${var.project_name}-${each.key}"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true

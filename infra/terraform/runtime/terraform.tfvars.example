@@ -1,0 +1,24 @@
+region       = "us-east-1"
+project_name = "cwe-eks"
+# From `terraform -chdir=infra/terraform/foundation output`:
+cluster_name        = "cwe-eks-eks"
+vpc_id              = "vpc-REPLACE"
+subnet_ids          = ["subnet-REPLACE-A", "subnet-REPLACE-B"] # existing private subnets with NAT ...
+# ... or, in a VPC that only has public subnets, let this root create two private subnets and one NAT gateway:
+# private_subnets      = { a = { cidr = "172.31.96.0/24", availability_zone = "us-east-1a" }, b = { cidr = "172.31.97.0/24", availability_zone = "us-east-1b" } }
+# nat_public_subnet_id = "subnet-REPLACE-PUBLIC"
+# private_access       = "endpoints"   # PrivateLink instead of NAT: no Elastic IP, no internet path from the Runtime
+code_interpreter_id = "REPLACE"
+recordings_bucket   = "cwe-eks-recordings-ACCOUNT-us-east-1"
+recordings_prefix   = "cwe"
+operator_policy_arn = "arn:aws:iam::ACCOUNT:policy/cwe-eks-operator"
+# From `./scripts/deploy.sh --stage images --tag v1 --runtime --workload` (.env.eks):
+runtime_image  = "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/cwe-eks-runtime:v1"
+workload_image = "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/cwe-eks-workload-agent:v1"
+# Sticky sessions: the sandbox must outlive the microVM, so CWE_SESSION_TIMEOUT_SECONDS is set to at least this value.
+idle_runtime_session_timeout = 1800
+max_lifetime                 = 28800
+# Seoul (ap-northeast-2) has no Runtime Instances; microVM + EKS is the whole story there. Bedrock cross-region
+# inference profiles use the apac. prefix, so also set the model ids and widen bedrock_model_ids in the foundation root:
+# region              = "ap-northeast-2"
+# runtime_environment = { CWE_AGENT_MODEL = "apac.anthropic.claude-opus-5", CWE_JUDGE_MODEL = "apac.anthropic.claude-opus-5" }

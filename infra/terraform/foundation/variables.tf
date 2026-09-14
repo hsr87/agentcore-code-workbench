@@ -60,10 +60,37 @@ variable "android_max_size" {
   type    = number
   default = 4
 }
+variable "build_instance_type" {
+  description = "Node type for build/run workload Pods. No KVM needed, so any family works; memory-optimized suits large Java builds."
+  type        = string
+  default     = "r7i.2xlarge"
+}
+variable "build_volume_size" {
+  description = "Root volume (GiB) of build nodes. Holds the container image layers and every Pod's emptyDir workspace and caches."
+  type        = number
+  default     = 300
+  validation {
+    condition     = var.build_volume_size >= 50
+    error_message = "build_volume_size must be at least 50 GiB."
+  }
+}
+variable "build_desired_size" {
+  type    = number
+  default = 1
+}
+variable "build_max_size" {
+  type    = number
+  default = 4
+}
 variable "recordings_bucket_name" {
   description = "Override when importing the retained CloudFormation bucket."
   type        = string
   default     = null
+}
+variable "sandbox_recordings_access" {
+  description = "Grant the Code Interpreter execution role read/write on the recordings prefix. Off by default: sandbox code is model-written, and with the recordings-store registry it could otherwise read or forge session records."
+  type        = bool
+  default     = false
 }
 variable "recordings_prefix" {
   description = "Key prefix inside the recordings bucket. Sandbox and operator access is confined to it."

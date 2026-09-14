@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import re
 import threading
 from typing import Any
 
@@ -21,6 +22,7 @@ from cwe.sandbox import AgentCoreSandbox, Sandbox
 from cwe.snapshots import restore_snapshot, take_snapshot
 
 log = logging.getLogger(__name__)
+MAX_REMOTE_RECORD = 20_000
 
 
 class DevSession:
@@ -35,6 +37,11 @@ class DevSession:
         self._current_run: RunRecord | None = None
         self.device = None          # cwe.android.AndroidDevice (connected via attach_android)
         self._device_host = None    # EKS/EC2 host implementing start/stop
+        self.workload = None        # cwe.workload.WorkloadClient (heavy build/run Pod)
+        self._workload_host = None
+        self._workload_profile = None
+        self._workload_lock = threading.Lock()   # one Pod per session even when a caller retries the request
+        self._lease_guard = None    # callable set by the Runtime entry point: raises once this process lost the session lease
         self._run_results: dict[str, list[ExecResult]] = {}
         self._outputs: dict[str, str] = {}   # 'run_id:exec_no' -> full output (for on-demand context retrieval)
         self._lock = threading.RLock()
@@ -65,10 +72,28 @@ class DevSession:
             self.mocks.stop_all()
             if self._device_host:
                 self._device_host.stop()
+            if self._workload_host:
+                self._workload_host.stop()
         finally:
             self.sandbox.stop()
             self.info.status = "closed"
             self._persist()
+
+    def detach(self) -> None:
+        """Let go of live resources without stopping them. Used when this process is about to exit but the
+        session registry still points at the sandbox and Pods, so the next Runtime microVM can reattach."""
+        for host in (self._device_host, self._workload_host):
+            if host is not None and hasattr(host, "detach"):
+                host.detach()
+        self._persist()
+
+    # -- sticky sessions (AgentCore Runtime) -------------------------------------
+    def registry_record(self, runtime_session_id: str) -> dict[str, Any]:
+        """Everything a fresh process needs to find this session again. Tokens are sealed by the registry, not here."""
+        hosts = [h.describe() for h in (self._device_host, self._workload_host) if h is not None and hasattr(h, "describe")]
+        return {"runtime_session_id": runtime_session_id, "session_id": self.info.session_id,
+                "sandbox_session_id": self.info.sandbox_session_id, "workspace_path": self.info.workspace_path,
+                "hosts": hosts}
 
     # -- runs -----------------------------------------------------------------
     def begin_run(self, title: str = "", actor: str = "user", metadata: dict[str, Any] | None = None, budget: RunBudget | None = None) -> RunRecord:
@@ -125,6 +150,8 @@ class DevSession:
     def _record(self, result: ExecResult, actor: str = "user", files: dict[str, str | bytes] | None = None) -> ExecResult:
         with self._lock:   # do the budget check and counter increment together (so concurrent requests can't both slip past the limit)
             run = self._require_run()
+            if self._lease_guard is not None:
+                self._lease_guard()
             if actor != "system":
                 self.check_budget()
             run.exec_count += 1
@@ -283,6 +310,116 @@ class DevSession:
             self.device_action("install", {"path": path}, res)
             out.append(res)
         return out
+
+    # -- heavy workload on EKS: build and run what the microVM cannot ----------------
+    def start_workload(self, profile=None, host=None):
+        """Start a build/run Pod for this session. Returns the WorkloadClient; the agent's remote_* tools use it."""
+        from cwe.workload import EKSWorkloadHost, WorkloadProfile
+
+        # A retried or concurrent request waits here and then sees the Pod the first one started.
+        with self._workload_lock:
+            if self.info.status == "closed":
+                raise RuntimeError("session is closed")
+            if self._workload_host is not None:
+                raise RuntimeError("workload already started")
+            profile = profile or WorkloadProfile()
+            if not profile.image and self.settings.workload_image:
+                profile = profile.model_copy(update={"image": self.settings.workload_image})
+            host = host or EKSWorkloadHost.from_env(self.settings)
+            owns_run = self._current_run is None   # inside a caller's run, record there instead of closing it
+            if owns_run:
+                self.begin_run("workload-provision", actor="system")
+            try:
+                client = host.start(profile, self.info.session_id)
+            except Exception:
+                if owns_run:
+                    self.end_run("failed")
+                raise
+            if self.info.status == "closed":   # closed while the Pod was starting: do not leave it behind
+                host.stop()
+                raise RuntimeError("session was closed while the workload was starting")
+            self._attach_workload(client, host, profile)
+            if owns_run:
+                self.end_run("succeeded")
+            return client
+
+    def _attach_workload(self, client, host, profile=None) -> None:
+        self.workload, self._workload_host, self._workload_profile = client, host, profile
+        try:
+            health = client.health()
+        except Exception as e:  # noqa: BLE001
+            health = {"error": str(e)[:200]}
+        self.recorder.record(self._require_run().run_id, "note",
+                             {"action": "attach_workload", "image": getattr(profile, "image", None),
+                              "cpus": health.get("cpus"), "mem_total_bytes": health.get("mem_total_bytes"),
+                              "disk_total_bytes": health.get("disk_total_bytes")})
+
+    def _record_remote(self, name: str, params: dict, result: dict, ok: bool | None = None, actor: str = "agent") -> ExecResult:
+        import json as _json
+
+        if ok is None:
+            if "exit_code" in result:
+                ok = result.get("exit_code") == 0
+            elif "status" in result:
+                ok = 0 < int(result.get("status") or 0) < 500
+            else:
+                ok = True
+        text = result.get("output") or result.get("log") or result.get("body") or _json.dumps({k: v for k, v in result.items() if k != "headers"}, ensure_ascii=False)
+        r = ExecResult(kind=ExecKind.REMOTE, input=f"{name} {_json.dumps(params, ensure_ascii=False)[:2000]}", stdout=str(text)[:MAX_REMOTE_RECORD],
+                       exit_code=result.get("exit_code", 0 if ok else 1), is_error=not ok, execution_time=result.get("seconds"), finished_at=utcnow())
+        return self._record(r, actor=actor)
+
+    def _require_workload(self):
+        if self.workload is None:
+            raise RuntimeError("no workload attached; call start_workload first")
+        return self.workload
+
+    def workload_exec(self, cmd: str, timeout: int = 600, cwd: str = ".", actor: str = "agent") -> ExecResult:
+        res = self._require_workload().exec(cmd, timeout=timeout, cwd=cwd)
+        return self._record_remote("remote_shell", {"cmd": cmd, "cwd": cwd, "timeout": timeout}, res, actor=actor)
+
+    def workload_start(self, name: str, cmd: str, cwd: str = ".", actor: str = "agent") -> ExecResult:
+        res = self._require_workload().start(name, cmd, cwd=cwd)
+        return self._record_remote("remote_start", {"name": name, "cmd": cmd, "cwd": cwd}, res, ok=True, actor=actor)
+
+    def workload_stop(self, name: str, actor: str = "agent") -> ExecResult:
+        res = self._require_workload().stop(name)
+        return self._record_remote("remote_stop", {"name": name}, res, ok=True, actor=actor)
+
+    def workload_logs(self, name: str, tail: int = 4000, actor: str = "agent") -> dict[str, Any]:
+        res = self._require_workload().logs(name, tail=tail)
+        self._record_remote("remote_logs", {"name": name, "tail": tail}, res, ok=True, actor=actor)
+        return res
+
+    def workload_probe(self, port: int, path: str = "/", method: str = "GET", body: str | None = None,
+                       headers: dict[str, str] | None = None, actor: str = "agent") -> dict[str, Any]:
+        res = self._require_workload().probe(port, path, method, body, headers)
+        ok = 0 < int(res.get("status") or 0) < 500
+        self._record_remote("remote_probe", {"port": port, "path": path, "method": method}, res, ok=ok, actor=actor)
+        return res
+
+    def workload_write_files(self, files: dict[str, str | bytes], actor: str = "agent") -> ExecResult:
+        res = self._require_workload().write_files(files)
+        return self._record_remote("remote_write_files", {"paths": list(files)}, res, ok=True, actor=actor)
+
+    def workload_read_file(self, path: str, max_bytes: int = 200_000) -> bytes | None:
+        return self._require_workload().read_file(path, max_bytes)
+
+    def sync_workspace_to_workload(self, source_dir: str = ".", dest: str = ".", clean: bool = False, actor: str = "agent") -> dict[str, Any]:
+        """Copy the sandbox workspace (or a subfolder) into the Pod: snapshot -> S3 -> presigned fetch.
+        For a large repository prefer `git clone` inside the Pod via remote_shell and sync only the diff."""
+        from cwe.github import presign
+
+        self._require_workload()
+        src = f"{self.info.workspace_path or self.info.profile.workspace}/{source_dir}".rstrip("/.")
+        snap = take_snapshot(self.sandbox, self.store, self.info.session_id, src, description=f"workload sync {source_dir}")
+        url = presign(self.store, self.info.session_id, f"{snap.snapshot_id}.tar.gz", self.settings.region, expires=1800)
+        if not url or not url.startswith("http"):
+            raise RuntimeError("sync_workspace_to_workload needs an S3 recordings store (CWE_STORAGE_URI=s3://...) so the Pod can fetch the source")
+        res = self.workload.fetch(url, dest=dest, extract=True, clean=clean)
+        res["snapshot_id"] = snap.snapshot_id
+        self._record_remote("remote_sync_workspace", {"source_dir": source_dir, "dest": dest, "snapshot_id": snap.snapshot_id}, res, ok=True, actor=actor)
+        return res
 
     @property
     def skills(self):
@@ -467,6 +604,78 @@ class SessionManager:
                 self.close(sid)
             except Exception as e:
                 log.warning("close %s failed: %s", sid, e)
+
+    def detach(self, session_id: str) -> None:
+        """Forget one session in this process without stopping its sandbox or Pods (another process owns them now)."""
+        with self._lock:
+            sess = self._sessions.pop(session_id, None)
+        if sess is not None:
+            sess.detach()
+
+    def detach_all(self) -> None:
+        """Process exit under a session registry: keep sandboxes and Pods for the next microVM."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+        for sess in sessions:
+            try:
+                sess.detach()
+            except Exception as e:  # noqa: BLE001
+                log.warning("detach %s failed: %s", sess.info.session_id, e)
+
+    def attach(self, record: dict[str, Any]) -> DevSession:
+        """Rebuild a DevSession from a registry record: adopt the Code Interpreter session and reconnect to its Pods.
+        Raises if the sandbox is gone; a caller then creates a fresh session and lets Job deadlines reclaim the Pods."""
+        session_id = record.get("session_id")
+        if not isinstance(session_id, str) or not re.fullmatch(r"sess_[0-9a-f]{12}", session_id):
+            raise ValueError("registry record has an invalid session id")
+        with self._lock:
+            if session_id in self._sessions:
+                return self._sessions[session_id]
+        info = self.load_session_info(session_id)
+        sandbox = self._sandbox_factory(info.profile)
+        if not record.get("sandbox_session_id"):
+            raise RuntimeError("record has no sandbox session")
+        if hasattr(sandbox, "attach"):
+            sandbox.attach(record["sandbox_session_id"])
+        else:
+            sandbox.start()
+        recorder = Recorder(session_id, self.store, memory_client=self._memory_client, memory_id=self.settings.memory_id)
+        sess = DevSession(info, sandbox, recorder, self.settings, self.store)
+        info.sandbox_session_id = sandbox.session_id
+        info.workspace_path = record.get("workspace_path") or info.workspace_path
+        sess.emulator.workspace_path = info.workspace_path
+        sess.mocks = MockServiceEmulator(sandbox, info.workspace_path)
+        info.status = "ready"
+        sess.begin_run("reattach", actor="system")
+        try:
+            for host_record in record.get("hosts") or []:
+                self._attach_host(sess, host_record)
+            sess.end_run("succeeded")
+        except Exception:
+            sess.detach()
+            sess.end_run("failed")
+            raise
+        with self._lock:
+            self._sessions[session_id] = sess
+        return sess
+
+    def _attach_host(self, sess: DevSession, host_record: dict[str, Any]) -> None:
+        kind = host_record.get("kind")
+        if kind == "workload":
+            from cwe.workload import EKSWorkloadHost, WorkloadProfile
+
+            host = EKSWorkloadHost.from_env(self.settings)
+            client = host.attach(host_record)
+            profile = WorkloadProfile.model_validate(host_record["profile"]) if host_record.get("profile") else None
+            sess._attach_workload(client, host, profile)
+        elif kind == "android":
+            from cwe.eks import EKSEmulatorHost
+
+            host = EKSEmulatorHost.from_env(self.settings)
+            sess.attach_android(host.attach(host_record), host)
+        else:
+            raise ValueError(f"unknown host kind {kind!r}")
 
     def load_session_info(self, session_id: str) -> SessionInfo:
         """Reads (closed) session metadata from the store. Used for snapshot restore/replay."""

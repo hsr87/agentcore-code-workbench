@@ -40,6 +40,13 @@ Never send workspace contents to external hosts unless the task explicitly asks 
 When done, reply with a short summary of what changed and how you verified it."""
 MAX_READ_CHARS = 20_000   # cap on how much read_full_output / read_file can pull into context at once (prevents bypassing context delegation)
 
+WORKLOAD_PROMPT = """
+
+A workload Pod on EKS is attached: a Linux machine with far more CPU, memory and disk than this sandbox, holding the
+project's toolchain (JDK, Gradle/Maven, ...). Use remote_shell there for builds and test suites that would exhaust the
+sandbox, remote_sync_workspace (or git clone via remote_shell) to move the code, remote_start/remote_logs/remote_probe to run
+the service and check its endpoints, and remote_status to see what is running. Edit code in the sandbox, verify on the Pod."""
+
 ANDROID_PROMPT = """
 
 An Android emulator is attached. Use android_screenshot to SEE the screen (you receive the image) and android_ui to get
@@ -144,7 +151,72 @@ def cwe_tools(session: DevSession) -> list:
     ]
     if session.device is not None:
         tools += android_tools(session, make, call)
+    if session.workload is not None:
+        tools += workload_tools(session, make, call)
     return tools
+
+
+def workload_tools(session: DevSession, make, call) -> list:
+    """Tools for the EKS workload Pod. Same recording path as the sandbox tools; the Pod is where heavy things run."""
+
+    async def remote_shell(a):
+        r = await call(session.workload_exec, a["cmd"], int(a.get("timeout") or 600), a.get("cwd") or ".", actor="agent")
+        return _fmt(r, session.last_exec_ref())
+
+    async def remote_start(a):
+        r = await call(session.workload_start, a["name"], a["cmd"], a.get("cwd") or ".", actor="agent")
+        return _fmt(r, session.last_exec_ref())
+
+    async def remote_stop(a):
+        r = await call(session.workload_stop, a["name"], actor="agent")
+        return _fmt(r, session.last_exec_ref())
+
+    async def remote_logs(a):
+        res = await call(session.workload_logs, a["name"], int(a.get("tail") or 4000), actor="agent")
+        return json.dumps({"running": res.get("running"), "exit_code": res.get("exit_code"),
+                           "log": summarize_output(res.get("log") or "", 4000)}, ensure_ascii=False)
+
+    async def remote_probe(a):
+        res = await call(session.workload_probe, int(a["port"]), a.get("path") or "/", a.get("method") or "GET", a.get("body"), a.get("headers"), actor="agent")
+        return json.dumps({"status": res.get("status"), "error": res.get("error"), "seconds": res.get("seconds"),
+                           "body": summarize_output(res.get("body") or "", 4000)}, ensure_ascii=False)
+
+    async def remote_write_file(a):
+        r = await call(session.workload_write_files, {a["path"]: a["content"]}, actor="agent")
+        return _fmt(r, session.last_exec_ref())
+
+    async def remote_read_file(a):
+        data = await call(session.workload_read_file, a["path"])
+        if data is None:
+            return _err(f"{a['path']} not found on the workload")
+        text = data.decode("utf-8", "replace")
+        return text if len(text) <= MAX_READ_CHARS else text[:MAX_READ_CHARS] + f"\n...[{len(text) - MAX_READ_CHARS} chars omitted]"
+
+    async def remote_sync_workspace(a):
+        res = await call(session.sync_workspace_to_workload, a.get("source_dir") or ".", a.get("dest") or ".", bool(a.get("clean")), actor="agent")
+        return json.dumps({k: res.get(k) for k in ("bytes", "files", "dest", "seconds")}, ensure_ascii=False)
+
+    async def remote_status(_a):
+        h = await call(session.workload.health)
+        return json.dumps({k: h.get(k) for k in ("cpus", "mem_total_bytes", "mem_available_bytes", "disk_free_bytes", "disk_total_bytes", "procs")}, ensure_ascii=False)
+
+    obj = lambda props, req=(): {"type": "object", "properties": props, "required": list(req)}  # noqa: E731
+    s, i = {"type": "string"}, {"type": "integer"}
+    return [
+        make("remote_shell", "Run a shell command on the workload Pod (large memory/disk: builds, test suites, docker-less integration runs). "
+             "cwd is relative to the Pod workspace. Returns exit code, output summary and a ref.", obj({"cmd": s, "timeout": i, "cwd": s}, ("cmd",)), remote_shell),
+        make("remote_start", "Start a long-running process on the Pod in the background (e.g. the service under test) under a name.",
+             obj({"name": s, "cmd": s, "cwd": s}, ("name", "cmd")), remote_start),
+        make("remote_stop", "Stop a background process started with remote_start.", obj({"name": s}, ("name",)), remote_stop),
+        make("remote_logs", "Tail the log of a background process on the Pod.", obj({"name": s, "tail": i}, ("name",)), remote_logs),
+        make("remote_probe", "Send an HTTP request from inside the Pod to a port the service under test listens on (127.0.0.1:<port>). "
+             "Returns status and body.", obj({"port": i, "path": s, "method": s, "body": s, "headers": {"type": "object"}}, ("port",)), remote_probe),
+        make("remote_write_file", "Write a text file into the Pod workspace.", obj({"path": s, "content": s}, ("path", "content")), remote_write_file),
+        make("remote_read_file", "Read a text file from the Pod workspace.", obj({"path": s}, ("path",)), remote_read_file),
+        make("remote_sync_workspace", "Copy the sandbox workspace (or a subfolder) into the Pod workspace. For big repositories, git clone in the Pod instead.",
+             obj({"source_dir": s, "dest": s, "clean": {"type": "boolean"}}), remote_sync_workspace),
+        make("remote_status", "CPU, memory, disk and background processes of the workload Pod.", {}, remote_status),
+    ]
 
 
 def android_tools(session: DevSession, make, call) -> list:
@@ -295,7 +367,8 @@ def system_prompt_for(session: DevSession) -> str:
     except Exception:  # noqa: BLE001
         skill_names = []
     note = f"\nApproved skills available via load_skill: {', '.join(skill_names)}." if skill_names else ""
-    return SYSTEM_PROMPT + note + (ANDROID_PROMPT if session.device is not None else "")
+    return (SYSTEM_PROMPT + note + (WORKLOAD_PROMPT if session.workload is not None else "")
+            + (ANDROID_PROMPT if session.device is not None else ""))
 
 
 def cwe_env(settings: Settings | None = None, config_dir: str | None = None) -> dict[str, str]:

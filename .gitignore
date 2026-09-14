@@ -24,3 +24,10 @@ crash.log
 # Project instructions for the maintainer's Claude Code sessions; not part of the release
 CLAUDE.md
 .env-*
+
+# Customer and internal correspondence drafted next to the code; not part of the release
+external_email.txt
+.internal_message.txt
+
+# Customer communications used as input for this work; never part of the release
+issues/

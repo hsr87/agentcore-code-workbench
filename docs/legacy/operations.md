@@ -1,74 +1,74 @@
-> Legacy: the earlier EC2 and CloudFormation deployment. It is kept in Korean for existing installations only. For the current EKS and Terraform release, see the top-level README.md and GUIDE.md.
+> Legacy: the earlier EC2 and CloudFormation deployment. It is kept for existing installations only. For the current EKS and Terraform release, see the top-level README.md and GUIDE.md.
 
-# 운영 가이드
+# Operations guide
 
-## 배포
+## Deployment
 
 ```bash
-./scripts/legacy/deploy.sh --region us-east-1                      # 기본: 인바운드 없음, SSM 포트 포워딩
-./scripts/legacy/deploy.sh --region us-east-1 --allowed-cidr 10.0.0.0/8   # 고정 사무실/VPN CIDR 이 있을 때만
+./scripts/legacy/deploy.sh --region us-east-1                      # default: no inbound, SSM port forwarding
+./scripts/legacy/deploy.sh --region us-east-1 --allowed-cidr 10.0.0.0/8   # only when you have a fixed office/VPN CIDR
 set -a && source .env && set +a
 ```
 
-`deploy.sh` 는 멱등이다. 스택 변경이 없으면 그대로 통과하고, 이미지는 매번 다시 빌드·푸시한다. 스택 이름은 `CWE_STACK_NAME`(기본 `cwe-foundation`), 리소스 접두어는 `CWE_PROJECT_NAME`(기본 `cwe`)으로 바꾼다.
+`deploy.sh` is idempotent. If there are no stack changes it passes through, and the image is rebuilt and pushed every time. Change the stack name with `CWE_STACK_NAME` (default `cwe-foundation`) and the resource prefix with `CWE_PROJECT_NAME` (default `cwe`).
 
-## 일상 점검
+## Routine checks
 
-| 항목 | 명령 | 기대값 |
+| Item | Command | Expected |
 |---|---|---|
-| 열린 샌드박스 세션 | `aws bedrock-agentcore list-code-interpreter-sessions --code-interpreter-identifier $CWE_CODE_INTERPRETER_ID --status READY` | 작업 중이 아니면 0개 |
-| 남은 Android 호스트 | `aws ec2 describe-instances --filters Name=tag:project,Values=cwe Name=instance-state-name,Values=running` | 세션 종료 후 0개 |
-| 기록 크기 | `aws s3 ls s3://<bucket>/cwe/ --recursive --summarize` | 세션당 수 MB |
+| Open sandbox sessions | `aws bedrock-agentcore list-code-interpreter-sessions --code-interpreter-identifier $CWE_CODE_INTERPRETER_ID --status READY` | 0 when no work is in progress |
+| Remaining Android hosts | `aws ec2 describe-instances --filters Name=tag:project,Values=cwe Name=instance-state-name,Values=running` | 0 after sessions end |
+| Recording size | `aws s3 ls s3://<bucket>/cwe/ --recursive --summarize` | A few MB per session |
 
-세션을 닫지 않고 프로세스가 죽으면 샌드박스 세션은 타임아웃(기본 30분)까지, EC2 호스트는 terminate 될 때까지 과금된다. 회수 수단은 두 가지다.
+If a process dies without closing its session, the sandbox session is billed until the timeout (30 minutes by default) and the EC2 host until it is terminated. There are two ways to reclaim them.
 
-- `cwe reap [--apply] [--max-age-hours 4]` — `project` 태그가 붙은 인스턴스 중 `cwe:expires-at` 이 지났거나(태그가 없으면 기동 4시간 초과) READY 상태로 4시간을 넘긴 샌드박스 세션을 회수한다. cron 또는 EventBridge Scheduler(컨테이너/Lambda) 로 10분 주기 실행을 권장한다.
-- `scripts/cleanup.sh` — 전체 철거.
+- `cwe reap [--apply] [--max-age-hours 4]`: reclaims instances with the `project` tag whose `cwe:expires-at` has passed (or that have been up for more than 4 hours if the tag is missing), and sandbox sessions that have been READY for more than 4 hours. Running it every 10 minutes via cron or EventBridge Scheduler (container/Lambda) is recommended.
+- `scripts/cleanup.sh`: full teardown.
 
-## 장애 대응
+## Troubleshooting
 
-| 증상 | 원인 | 조치 |
+| Symptom | Cause | Action |
 |---|---|---|
-| `pip install` 이 `pypi.org` 이름 해석 실패 | 관리형 `aws.codeinterpreter.v1` 사용 중 | `CWE_CODE_INTERPRETER_ID` 를 스택 출력(PUBLIC 커스텀)으로 설정 |
-| `snapshot archive not found` | `readFiles` 경로 키 불일치 | SDK 래퍼가 정규화한다. 상대 경로로 요청했는지 확인 |
-| Android `device did not boot within 600s` | 이미지 풀(4.4 GB) 지연 또는 KVM 미적용 | SSM 으로 `ls -l /dev/kvm; docker ps` 확인. CpuOptions 가 `enabled` 인지 `describe-instances` 로 확인 |
-| device agent 401 / 403 | 토큰 또는 세션 헤더 불일치 | 호스트는 세션마다 새 토큰이다. 다른 세션의 IP 에 붙었는지, 풀 호스트가 이미 다른 세션에 `/bind` 되었는지 확인 |
-| device agent 컨테이너가 바로 죽음 (`DEVICE_AGENT_TOKEN is required`) | SSM 파라미터 읽기 실패로 토큰이 비어 있음 | `/var/log/cloud-init-output.log` 에서 `aws ssm get-parameter` 오류 확인 (인스턴스 역할, `ProjectName` 접두어). 토큰 없이 기동하지 않는 것이 의도된 동작 |
-| `cwe serve` 가 기동 거부 | `CWE_API_KEY` 없이 외부 주소(`--host 0.0.0.0`)에 바인드 | 키를 설정하거나 127.0.0.1 로. 개발용 예외는 `CWE_ALLOW_UNAUTHENTICATED=1` |
-| device agent 연결 불가 (`ssm`) | 인스턴스가 SSM 에 미등록, 플러그인 없음 | `aws ssm describe-instance-information` 으로 Online 확인, `session-manager-plugin` 설치, 인스턴스 아웃바운드(443) 확인 |
-| device agent 연결 불가 (`public`) | 보안 그룹 CIDR 과 실제 출구 IP 불일치(NAT 회전) | `ssm` 모드로 전환하거나 출구 IP 대역 전체를 `--allowed-cidr` 로 지정 |
-| LLM 심사 `judge error` | 모델 접근 미활성 또는 리전 불일치 | Bedrock 콘솔에서 `anthropic.claude-opus-5` 활성, `AWS_REGION` 확인 |
-| 에이전트 run 의 입력 토큰이 턴당 5만 이상 | 이 머신의 Claude Code 설정(MCP 서버, 플러그인)이 CLI 에 상속됨 | `build_options` 기본값 유지(`CLAUDE_CONFIG_DIR` 임시 디렉터리, `strict_mcp_config=True`). 직접 옵션을 만들면 `cwe_env()` 를 env 로 |
-| 에이전트가 `CLINotFoundError` | Claude Agent SDK 의 번들 CLI 를 못 찾음 | `pip install claude-agent-sdk` 재설치(플랫폼 휠에 CLI 포함). 컨테이너는 linux/arm64 휠 |
+| `pip install` fails to resolve `pypi.org` | Using the managed `aws.codeinterpreter.v1` | Set `CWE_CODE_INTERPRETER_ID` to the stack output (PUBLIC custom) |
+| `snapshot archive not found` | `readFiles` path key mismatch | The SDK wrapper normalizes it. Check that the request used a relative path |
+| Android `device did not boot within 600s` | Slow image pull (4.4 GB) or KVM not applied | Check `ls -l /dev/kvm; docker ps` over SSM. Confirm CpuOptions is `enabled` with `describe-instances` |
+| device agent 401 / 403 | Token or session header mismatch | Each host gets a new token per session. Check whether you connected to another session's IP or the pool host was already bound to another session via `/bind` |
+| device agent container dies immediately (`DEVICE_AGENT_TOKEN is required`) | Token is empty because the SSM parameter read failed | Check `/var/log/cloud-init-output.log` for `aws ssm get-parameter` errors (instance role, `ProjectName` prefix). Refusing to start without a token is the intended behavior |
+| `cwe serve` refuses to start | Bound to an external address (`--host 0.0.0.0`) without `CWE_API_KEY` | Set a key or use 127.0.0.1. Development-only exception: `CWE_ALLOW_UNAUTHENTICATED=1` |
+| Cannot connect to device agent (`ssm`) | Instance not registered with SSM, plugin missing | Confirm Online with `aws ssm describe-instance-information`, install `session-manager-plugin`, check instance outbound (443) |
+| Cannot connect to device agent (`public`) | Security group CIDR does not match the actual egress IP (NAT rotation) | Switch to `ssm` mode or pass the whole egress IP range as `--allowed-cidr` |
+| LLM judge `judge error` | Model access not enabled or region mismatch | Enable `anthropic.claude-opus-5` in the Bedrock console, check `AWS_REGION` |
+| Agent run input tokens exceed 50k per turn | This machine's Claude Code configuration (MCP servers, plugins) is inherited by the CLI | Keep the `build_options` defaults (temporary `CLAUDE_CONFIG_DIR`, `strict_mcp_config=True`). If you build options yourself, use `cwe_env()` as env |
+| Agent raises `CLINotFoundError` | The Claude Agent SDK's bundled CLI was not found | Reinstall with `pip install claude-agent-sdk` (the platform wheel includes the CLI). Containers use the linux/arm64 wheel |
 
-## 로그와 관측성
+## Logs and observability
 
-- Code Interpreter 호출은 CloudTrail 과 AgentCore 콘솔의 Built-in tools 지표에 남는다.
-- Runtime 으로 배포하면 `opentelemetry-instrument` 가 span 을 CloudWatch 로 보내고, `EvaluationClient.run(evaluator_ids, session_id, agent_id)` 로 세션을 평가할 수 있다.
-- 실행 단위 기록은 `s3://<bucket>/cwe/<session_id>/events.jsonl`, 아티팩트는 `.../artifacts/`, 스냅샷은 `.../snap_*.tar.gz`.
-- run 마다 `RunRecord.trace_id` 가 Code Interpreter 호출의 `traceParent` 로 전달되므로, CloudWatch 의 AgentCore 트레이스에서 같은 trace id 로 기록을 찾을 수 있다.
-- 사후 채점: `python -c "from cwe.session import SessionManager; s=SessionManager().open_recorded('<session_id>'); print(s.evaluate(criteria, run_id=...))"` 또는 `POST /v1/recorded/{session_id}/evaluate`.
+- Code Interpreter calls appear in CloudTrail and in the Built-in tools metrics of the AgentCore console.
+- When deployed on Runtime, `opentelemetry-instrument` sends spans to CloudWatch, and the session can be evaluated with `EvaluationClient.run(evaluator_ids, session_id, agent_id)`.
+- Per-execution recordings are at `s3://<bucket>/cwe/<session_id>/events.jsonl`, artifacts under `.../artifacts/`, snapshots at `.../snap_*.tar.gz`.
+- Each run's `RunRecord.trace_id` is passed as the `traceParent` of Code Interpreter calls, so the recording can be found by the same trace id in the AgentCore traces in CloudWatch.
+- Post-hoc scoring: `python -c "from cwe.session import SessionManager; s=SessionManager().open_recorded('<session_id>'); print(s.evaluate(criteria, run_id=...))"` or `POST /v1/recorded/{session_id}/evaluate`.
 
-## Android 호스트 준비 시간과 비용
+## Android host startup time and cost
 
-| 방식 | 세션 시작까지 (실측) | 상시 비용 |
+| Method | Time to session start (measured) | Standing cost |
 |---|---|---|
-| 기본 AMI (매번 이미지 풀) | 약 2분 (122초) | 없음 |
-| 구운 AMI (`infra/bake_ami.py`) | 약 3.5분 (210초). EBS 스냅샷 지연 로드 때문에 부팅은 오히려 느리고, 이점은 Gradle 캐시(빌드 126초 → 101초) | AMI 스냅샷 저장 (월 수 달러) |
-| 대기 풀 (`cwe android-pool`) | 12초 | 인스턴스 대수 × 시간당 약 $0.19 |
+| Default AMI (image pull every time) | About 2 minutes (122 s) | None |
+| Baked AMI (`infra/bake_ami.py`) | About 3.5 minutes (210 s). Boot is actually slower because of EBS snapshot lazy loading; the benefit is the Gradle cache (build 126 s → 101 s) | AMI snapshot storage (a few dollars per month) |
+| Standby pool (`cwe android-pool`) | 12 seconds | Number of instances × about $0.19 per hour |
 
-대기 풀 호스트에는 `cwe:expires-at` 태그가 있고 user data 의 `shutdown -h +N` 으로 스스로도 내려간다. `cwe reap` 이 만료분을 회수한다. 풀 토큰은 SSM 파라미터 `/<project>/pool/<instance>/token` 에 보관되며 세션이 호스트를 놓을 때 삭제된다. 클레임 직후 device agent 의 `/bind` 로 세션에 묶이므로 다른 세션의 요청은 403 이다.
+Standby pool hosts have the `cwe:expires-at` tag and also shut themselves down via `shutdown -h +N` in user data. `cwe reap` reclaims expired ones. Pool tokens are kept in the SSM parameter `/<project>/pool/<instance>/token` and deleted when a session releases the host. Right after a claim the host is bound to the session via the device agent's `/bind`, so requests from other sessions get 403.
 
-`scripts/build_emulator_image.sh` 는 세션 호스트 프로파일이 아니라 `.env` 의 `CWE_ANDROID_BUILD_INSTANCE_PROFILE`(ECR push 권한이 있는 유일한 역할)로 빌드 호스트를 띄운다. 스택을 갱신하지 않은 `.env` 에는 이 값이 없으므로 `scripts/deploy.sh` 를 다시 돌린다.
+`scripts/build_emulator_image.sh` starts the build host with `CWE_ANDROID_BUILD_INSTANCE_PROFILE` from `.env` (the only role with ECR push permission), not the session host profile. A `.env` from before the stack update does not have this value, so run `scripts/deploy.sh` again.
 
-## 쿼터
+## Quotas
 
-- Code Interpreter 세션 최대 8시간, 인라인 파일 업로드 100 MB. 큰 데이터는 EFS/S3 Files 마운트(VPC 모드).
-- EC2 c8i 온디맨드 vCPU 한도가 낮은 신규 계정은 Service Quotas 에서 `Running On-Demand Standard instances` 를 올린다.
+- Code Interpreter sessions last at most 8 hours, inline file upload up to 100 MB. For large data, use EFS/S3 Files mounts (VPC mode).
+- New accounts with a low EC2 c8i on-demand vCPU limit should raise `Running On-Demand Standard instances` in Service Quotas.
 
-## 정리
+## Cleanup
 
 ```bash
-./scripts/legacy/cleanup.sh --region us-east-1                  # 인스턴스·세션·스택
-./scripts/legacy/cleanup.sh --region us-east-1 --delete-bucket  # 기록 버킷까지
+./scripts/legacy/cleanup.sh --region us-east-1                  # instances, sessions, stack
+./scripts/legacy/cleanup.sh --region us-east-1 --delete-bucket  # also the recordings bucket
 ```

@@ -79,7 +79,7 @@ def _eq(a: str, b: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# docker Engine API (unix socket) — used only for discovering the emulator container and running the Gradle build container
+# docker Engine API (unix socket), used only for discovering the emulator container and running the Gradle build container
 # ---------------------------------------------------------------------------
 def _docker_req(method: str, path: str, body: dict | None = None, timeout: float = 600, raw: bool = False):
     """Calls the docker Engine API (unix socket). Creates and runs containers without the CLI."""

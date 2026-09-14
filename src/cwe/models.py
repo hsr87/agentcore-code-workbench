@@ -30,6 +30,7 @@ class ExecKind(str, Enum):
     SETUP = "setup"        # emulator profile provisioning step
     MOCK_SERVICE = "mock_service"
     DEVICE = "device"          # Android device operations (tap/swipe/screenshot/instrument, ...)
+    REMOTE = "remote"          # command, process or probe on an EKS workload Pod
 
 
 class ExecResult(BaseModel):

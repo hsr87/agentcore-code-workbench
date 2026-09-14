@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 실행 중인 샌드박스 세션·Android 호스트를 정리하고 기반 스택을 삭제한다. 기록 버킷은 Retain 이므로 --delete-bucket 을 줘야 지운다.
+# Clean up running sandbox sessions and Android hosts, then delete the foundation stack. The recordings bucket is Retain, so pass --delete-bucket to delete it.
 #   ./scripts/cleanup.sh [--region us-east-1] [--delete-bucket]
 set -euo pipefail
 cd "$(dirname "$0")/../.."

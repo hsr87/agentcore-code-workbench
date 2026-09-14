@@ -16,6 +16,15 @@ variable "namespace" {
   type    = string
   default = "cwe"
 }
+variable "orchestrator_cidrs" {
+  description = "CIDRs of AgentCore Runtime subnets (VPC mode) allowed to reach session Pods on port 8080. Empty keeps port-forward-only access."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for c in var.orchestrator_cidrs : can(cidrnetmask(c)) && c != "0.0.0.0/0"])
+    error_message = "Use the Runtime subnet CIDRs; 0.0.0.0/0 is not allowed."
+  }
+}
 variable "kvm_plugin_image" {
   description = "Reviewed generic-device-plugin image. This DaemonSet is privileged, so a mutable tag is refused."
   type        = string
@@ -106,7 +115,7 @@ resource "kubernetes_resource_quota_v1" "lab" {
     namespace = kubernetes_namespace_v1.lab.metadata[0].name
   }
   spec {
-    hard = { pods = "16", "count/jobs.batch" = "16", "count/secrets" = "32", "requests.cpu" = "80", "requests.memory" = "160Gi" }
+    hard = { pods = "16", "count/jobs.batch" = "16", "count/secrets" = "32", "requests.cpu" = "80", "requests.memory" = "320Gi", "requests.ephemeral-storage" = "1600Gi" }
   }
 }
 # Only the node-level device plugin is privileged. It advertises one KVM slot
@@ -173,19 +182,33 @@ resource "kubernetes_network_policy_v1" "default_deny" {
   }
 }
 # Port-forward goes through the Kubernetes API. Direct pod access is only for
-# explicitly labelled in-cluster orchestrator Pods, including other namespaces.
+# explicitly labelled in-cluster orchestrator Pods (any namespace labelled part-of=cwe)
+# and, when orchestrator_cidrs is set, for AgentCore Runtime ENIs in those subnets.
+# The same policy covers Android device Pods and build/run workload Pods.
 resource "kubernetes_network_policy_v1" "device" {
   metadata {
     name      = "cwe-device"
     namespace = kubernetes_namespace_v1.lab.metadata[0].name
   }
   spec {
-    pod_selector { match_labels = { "app.kubernetes.io/name" = "cwe-android" } }
+    pod_selector {
+      match_expressions {
+        key      = "app.kubernetes.io/name"
+        operator = "In"
+        values   = ["cwe-android", "cwe-workload"]
+      }
+    }
     policy_types = ["Ingress", "Egress"]
     ingress {
       from {
         namespace_selector { match_labels = { "app.kubernetes.io/part-of" = "cwe" } }
         pod_selector { match_labels = { "cwe/role" = "orchestrator" } }
+      }
+      dynamic "from" {
+        for_each = toset(var.orchestrator_cidrs)
+        content {
+          ip_block { cidr = from.value }
+        }
       }
       ports {
         protocol = "TCP"

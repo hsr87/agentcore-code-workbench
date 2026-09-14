@@ -1,6 +1,7 @@
 """Verify deployed EKS/AgentCore storage and container security without reading credentials.
 
-Run while a demo session Pod exists for the container/metadata checks.
+Run while a session Pod exists (Android device Pod, workload Pod, or both) for the container and
+instance-metadata checks; the report lists which Pod kinds were checked.
 """
 import argparse,json,pathlib,subprocess,os,shlex
 import boto3
@@ -50,26 +51,38 @@ bucket=os.environ['CWE_STORAGE_URI'].removeprefix('s3://').split('/')[0]
 checks['s3_public_access_blocked']=all(s3.get_public_access_block(Bucket=bucket)['PublicAccessBlockConfiguration'].values())
 checks['s3_versioning']=s3.get_bucket_versioning(Bucket=bucket)['Status']=='Enabled'
 checks['s3_encryption']=bool(s3.get_bucket_encryption(Bucket=bucket)['ServerSideEncryptionConfiguration']['Rules'])
-pods=get('-n',namespace,'get','pods','-l','app.kubernetes.io/name=cwe-android')['items']
-if pods:
- p=pods[0]['spec']
- checks['session_sa_token_disabled']=not p['automountServiceAccountToken']
+policies={i['metadata']['name'] for i in get('-n',namespace,'get','networkpolicies')['items']}
+checks['network_policies_present']={'cwe-default-deny','cwe-device'} <= policies
+# Session Pods: the Android device Pod and the build/run workload Pod share one security model.
+pods=[p for app in ('cwe-android','cwe-workload') for p in get('-n',namespace,'get','pods','-l',f'app.kubernetes.io/name={app}')['items']]
+checked=[]
+for pod in pods:
+ p=pod['spec']
+ app=pod['metadata']['labels'].get('app.kubernetes.io/name')
+ checked.append(app)
  sec=[x.get('securityContext',{}) for x in p['containers']]
- checks['session_containers_nonprivileged']=all(not x.get('privileged',False) for x in sec)
- checks['session_no_privilege_escalation']=all(x.get('allowPrivilegeEscalation') is False for x in sec)
- checks['session_all_capabilities_dropped']=all(x.get('capabilities',{}).get('drop')==['ALL'] for x in sec)
- checks['session_no_hostpath']=all('hostPath' not in v for v in p['volumes'])
- checks['session_no_host_namespaces']=not (p.get('hostNetwork') or p.get('hostPID') or p.get('hostIPC'))
- checks['agent_and_builder_non_root']=all(x.get('securityContext',{}).get('runAsNonRoot') is True
-  for x in p['containers'] if x['name'] in ('device-agent','builder'))
- policies={i['metadata']['name'] for i in get('-n',namespace,'get','networkpolicies')['items']}
- checks['network_policies_present']={'cwe-default-deny','cwe-device'} <= policies
- checks['builder_no_token_env']=all(e['name']!='DEVICE_AGENT_TOKEN' for x in p['containers'] if x['name']=='builder' for e in x.get('env',[]))
- command=[*kube,'-n',namespace,'exec',pods[0]['metadata']['name'],'-c','builder','--','python3','-c',
+ checks['session_sa_token_disabled']=checks.get('session_sa_token_disabled',True) and not p['automountServiceAccountToken']
+ checks['session_containers_nonprivileged']=checks.get('session_containers_nonprivileged',True) and all(not x.get('privileged',False) for x in sec)
+ checks['session_no_privilege_escalation']=checks.get('session_no_privilege_escalation',True) and all(x.get('allowPrivilegeEscalation') is False for x in sec)
+ checks['session_all_capabilities_dropped']=checks.get('session_all_capabilities_dropped',True) and all(x.get('capabilities',{}).get('drop')==['ALL'] for x in sec)
+ checks['session_no_hostpath']=checks.get('session_no_hostpath',True) and all('hostPath' not in v for v in p['volumes'])
+ checks['session_no_host_namespaces']=checks.get('session_no_host_namespaces',True) and not (p.get('hostNetwork') or p.get('hostPID') or p.get('hostIPC'))
+ if app=='cwe-android':
+  checks['agent_and_builder_non_root']=all(x.get('securityContext',{}).get('runAsNonRoot') is True
+   for x in p['containers'] if x['name'] in ('device-agent','builder'))
+  checks['builder_no_token_env']=all(e['name']!='DEVICE_AGENT_TOKEN' for x in p['containers'] if x['name']=='builder' for e in x.get('env',[]))
+  probe_container='builder'
+ else:
+  checks['workload_non_root']=all(x.get('securityContext',{}).get('runAsNonRoot') is True for x in p['containers'])
+  checks['workload_read_only_root']=all(x.get('securityContext',{}).get('readOnlyRootFilesystem') is True for x in p['containers'])
+  checks['workload_token_from_secret_only']=all(e.get('valueFrom',{}).get('secretKeyRef') for x in p['containers'] for e in x.get('env',[]) if e['name']=='WORKLOAD_AGENT_TOKEN')
+  probe_container='workload'
+ command=[*kube,'-n',namespace,'exec',pod['metadata']['name'],'-c',probe_container,'--','python3','-c',
  "import urllib.request; urllib.request.urlopen('http://169.254.169.254/latest/meta-data/',timeout=3)"]
  r=subprocess.run(command,capture_output=True,text=True,timeout=15)
- checks['builder_metadata_network_blocked']=r.returncode!=0 and ('timed out' in r.stderr or 'unreachable' in r.stderr)
-report={'passed':all(checks.values()),'checks':checks,'pod_checked':bool(pods)}
+ key='builder_metadata_network_blocked' if app=='cwe-android' else 'workload_metadata_network_blocked'
+ checks[key]=r.returncode!=0 and ('timed out' in r.stderr or 'unreachable' in r.stderr)
+report={'passed':all(checks.values()),'checks':checks,'pods_checked':checked}
 args.output.parent.mkdir(parents=True,exist_ok=True)
 args.output.write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2))

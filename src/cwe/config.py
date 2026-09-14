@@ -32,6 +32,15 @@ class Settings:
     eks_context: str | None = field(default_factory=lambda: os.environ.get("CWE_EKS_CONTEXT") or None)
     eks_access: str = field(default_factory=lambda: os.environ.get("CWE_EKS_ACCESS") or "port-forward")
     eks_builder_image: str | None = field(default_factory=lambda: os.environ.get("CWE_EKS_BUILDER_IMAGE") or None)
+    # Runtime path: a cluster name is enough; cwe.kube writes a kubeconfig from the execution role's credentials.
+    eks_cluster_name: str | None = field(default_factory=lambda: os.environ.get("CWE_EKS_CLUSTER_NAME") or None)
+    eks_kubeconfig: str | None = field(default_factory=lambda: os.environ.get("CWE_EKS_KUBECONFIG") or None)
+    # Heavy build/run Pods (WorkloadProfile). The image comes from device_agent/Dockerfile.workload.
+    workload_image: str | None = field(default_factory=lambda: os.environ.get("CWE_WORKLOAD_IMAGE") or None)
+    # Sticky sessions across Runtime microVM replacement: DynamoDB table (infra/terraform/runtime) or the recordings store.
+    session_table: str | None = field(default_factory=lambda: os.environ.get("CWE_SESSION_TABLE") or None)
+    registry_kms_key_id: str | None = field(default_factory=lambda: os.environ.get("CWE_REGISTRY_KMS_KEY_ID") or None)
+    session_registry_ttl_seconds: int = field(default_factory=lambda: int(os.environ.get("CWE_SESSION_REGISTRY_TTL_SECONDS") or 24 * 3600))
     # Android emulator host (written to .env by scripts/deploy.sh)
     android_subnet_id: str | None = field(default_factory=lambda: os.environ.get("CWE_ANDROID_SUBNET_ID") or None)
     android_security_group_id: str | None = field(default_factory=lambda: os.environ.get("CWE_ANDROID_SECURITY_GROUP_ID") or None)

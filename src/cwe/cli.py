@@ -62,7 +62,7 @@ def cmd_replay(a):
 
 
 def cmd_reap(a):
-    """Reclaims Android hosts tagged with project whose cwe:expires-at has passed, along with stale sandbox sessions.
+    """Reclaims expired workload and Android Jobs (EKS) or Android hosts tagged with project whose cwe:expires-at has passed.
     Run periodically via cron / EventBridge: cwe reap --apply"""
     from datetime import datetime, timezone
 
@@ -74,9 +74,17 @@ def cmd_reap(a):
     now = datetime.now(timezone.utc)
     if st.android_backend == "eks":
         from cwe.eks import EKSEmulatorHost
+        from cwe.workload import EKSWorkloadHost
 
-        jobs = EKSEmulatorHost.from_env(st).reap(apply=a.apply)
-        print("deleted jobs:" if a.apply else "expired jobs (use --apply):", jobs)
+        jobs = EKSWorkloadHost.from_env(st).reap(apply=a.apply)
+        print("deleted workload jobs:" if a.apply else "expired workload jobs (use --apply):", jobs)
+        try:
+            android_host = EKSEmulatorHost.from_env(st)
+        except ValueError as e:   # workload-only environment without device images: nothing Android to reap
+            print(f"android jobs skipped: {e}")
+        else:
+            jobs = android_host.reap(apply=a.apply)
+            print("deleted android jobs:" if a.apply else "expired android jobs (use --apply):", jobs)
     elif st.android_backend == "ec2":
         ec2 = boto3.client("ec2", region_name=st.region)
         victims = []
@@ -165,6 +173,21 @@ def cmd_android_pool(a):
         host.token = secrets.token_urlsafe(24)   # the next host gets a different token
 
 
+def cmd_eks_token(a):
+    from cwe.config import get_settings
+    from cwe.kube import exec_credential
+
+    json.dump(exec_credential(a.cluster, a.region or get_settings().region), sys.stdout)
+
+
+def cmd_eks_kubeconfig(a):
+    from cwe.config import get_settings
+    from cwe.kube import ensure_kubeconfig
+
+    path, context = ensure_kubeconfig(a.cluster, a.region or get_settings().region, a.path)
+    print(f"{path}\t{context}")
+
+
 def cmd_serve(a):
     import ipaddress
     import os
@@ -197,6 +220,10 @@ def main(argv=None):
     ap = sub.add_parser("android-pool", help="maintain a warm pool of emulator hosts (legacy EC2 backend only)"); ap.add_argument("--size", type=int, default=1)
     ap.add_argument("--max-hours", type=float, default=4.0); ap.set_defaults(fn=cmd_android_pool)
     s = sub.add_parser("serve"); s.add_argument("--host", default="127.0.0.1"); s.add_argument("--port", type=int, default=8000); s.set_defaults(fn=cmd_serve)
+    kt = sub.add_parser("eks-token", help="kubectl exec credential plugin: print an EKS token from the caller's IAM credentials")
+    kt.add_argument("--cluster", required=True); kt.add_argument("--region"); kt.set_defaults(fn=cmd_eks_token)
+    kc = sub.add_parser("eks-kubeconfig", help="write a kubeconfig for the cluster using cwe eks-token, print its path and context")
+    kc.add_argument("--cluster", required=True); kc.add_argument("--region"); kc.add_argument("--path"); kc.set_defaults(fn=cmd_eks_kubeconfig)
     a = p.parse_args(argv)
     a.fn(a)
 

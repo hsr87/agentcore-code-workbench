@@ -1,7 +1,7 @@
 """Android emulator support.
 
 Components
-- AndroidEmulatorProfile : emulator profile — API level, image, emulator parameters, and app APK for a device session.
+- AndroidEmulatorProfile : emulator profile: API level, image, emulator parameters, and app APK for a device session.
 - emulator_host          : defaults to EKS (cwe.eks.EKSEmulatorHost), or an explicit choice of the legacy EC2 backend.
 - EC2EmulatorHost        : for legacy deployment compatibility, runs the emulator container and device agent on EC2 (c8i, nested virtualization). Supports a custom AMI and a warm pool.
 - AndroidDevice          : HTTP API client for the device agent (tap/swipe/text/screenshot/ui/install/instrument/...).

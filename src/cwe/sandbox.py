@@ -102,6 +102,19 @@ class AgentCoreSandbox:
         finally:
             self.session_id = None
 
+    def attach(self, session_id: str) -> str:
+        """Adopt a session another process started (sticky sessions across Runtime microVM replacement).
+        Verified against the service first, so a session that timed out is reported instead of failing on the first command."""
+        status = self._client.data_plane_client.get_code_interpreter_session(
+            codeInterpreterIdentifier=self._identifier, sessionId=session_id).get("status")
+        if status != "READY":
+            raise RuntimeError(f"code interpreter session {session_id} is {status or 'gone'}")
+        self._client.identifier = self._identifier
+        self._client.session_id = session_id
+        self.session_id = session_id
+        log.info("sandbox attached: %s", session_id)
+        return session_id
+
     def _invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if not self.trace_parent:
             return _collect_result(self._client.invoke(method, params))
@@ -216,6 +229,10 @@ class ReplaySandbox:
     def start(self) -> str:
         self.session_id = "replay"
         return self.session_id
+
+    def attach(self, session_id: str) -> str:
+        self.session_id = session_id
+        return session_id
 
     def stop(self) -> None:
         self.session_id = None

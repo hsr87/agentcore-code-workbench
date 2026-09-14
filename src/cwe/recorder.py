@@ -66,6 +66,12 @@ class _LocalStore:
         with open(self.path(session_id, name), "rb") as f:
             return f.read()
 
+    def delete(self, session_id: str, name: str) -> None:
+        try:
+            os.unlink(self.path(session_id, name))
+        except FileNotFoundError:
+            pass
+
     def read_lines(self, session_id: str, name: str) -> list[str]:
         p = self.path(session_id, name)
         if not os.path.exists(p):

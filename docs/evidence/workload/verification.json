@@ -1,0 +1,88 @@
+{
+  "steps": [
+    {
+      "step": "sandbox_created",
+      "session_id": "sess_3ee5ac5af136",
+      "sandbox": "01M2FBEDBJX48GDX8TMK32H3XM",
+      "workspace": "/opt/amazon/genesis1p-tools/var/workspace",
+      "t": 7.0
+    },
+    {
+      "step": "workload_started",
+      "seconds": 26.7,
+      "health": {
+        "ok": true,
+        "work": "/opt/cwe/work",
+        "uptime_seconds": 13.8,
+        "cpus": 8,
+        "disk_free_bytes": 95145992192,
+        "disk_total_bytes": 107294470144,
+        "mem_total_bytes": 33087782912,
+        "mem_available_bytes": 31830286336,
+        "procs": []
+      },
+      "pod": "NAME                                   READY   STATUS    RESTARTS   AGE   IP              NODE                          NOMINATED NODE   READINESS GATES\ncwe-sess-3ee5ac5af136-6765d7-0-l26fh   1/1     Running   0          25s   172.31.93.245   ip-172-31-90-9.ec2.internal   <none>           <none>\n",
+      "t": 37.8
+    },
+    {
+      "step": "remote_exec",
+      "exit_code": 0,
+      "output": "8\n/bin/sh: 1: free: not found\n/dev/nvme0n1p1  100G   12G   89G  12% /opt/cwe/work\nPython 3.12.14\nuid=1000 gid=1000 groups=1000\n",
+      "t": 39.2
+    },
+    {
+      "step": "remote_service",
+      "probe_status": 200,
+      "body": "<h1>pod</h1>",
+      "logs": "127.0.0.1 - - [14/Sep/2026 07:00:42] \"GET /index.html HTTP/1.1\" 200 -\n",
+      "t": 44.4
+    },
+    {
+      "step": "remote_read_file",
+      "content": "b'<h1>pod</h1>'",
+      "t": 45.4
+    },
+    {
+      "step": "sync_workspace",
+      "ok": false,
+      "error": "workload agent /fetch failed (400): {\"error\": \"url host does not resolve\"}",
+      "note": "expected under default-deny until the platform stage admits cwe-workload egress",
+      "t": 66.8
+    },
+    {
+      "step": "registry_roundtrip_s3",
+      "ok": true,
+      "job": "cwe-sess-3ee5ac5af136-6765d7-0",
+      "t": 68.8
+    },
+    {
+      "step": "detached",
+      "jobs_still_running": "job.batch/cwe-sess-3ee5ac5af136-6765d7-0",
+      "t": 70.7
+    },
+    {
+      "step": "reattached",
+      "seconds": 12.7,
+      "same_session": true,
+      "same_sandbox": true,
+      "sandbox_file": "from the sandbox",
+      "same_job": true,
+      "pod_file": "<h1>pod</h1>cwe-sess-3ee5ac5af136-6765d7-0-l26fh",
+      "runs": [
+        "provision",
+        "verify",
+        "workload-provision",
+        "adhoc",
+        "reattach",
+        "after-reattach"
+      ],
+      "t": 83.4
+    },
+    {
+      "step": "closed",
+      "jobs": "(none)",
+      "t": 91.0
+    }
+  ],
+  "passed": true
+}

@@ -3,3 +3,6 @@ kube_context = "arn:aws:eks:us-east-1:ACCOUNT:cluster/cwe-eks-eks"
 # repository; a mutable :latest tag is rejected.
 kvm_plugin_image = "squat/generic-device-plugin@sha256:REPLACE"
 namespace        = "cwe"
+# Subnet CIDRs of the AgentCore Runtime (infra/terraform/runtime, VPC mode) that may reach session Pods.
+# Leave empty until the runtime root is applied; then copy its `runtime_subnet_cidrs` output here and re-apply.
+orchestrator_cidrs = []

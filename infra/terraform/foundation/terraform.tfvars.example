@@ -16,3 +16,8 @@ recordings_prefix     = "cwe"
 android_instance_type = "m8i.2xlarge"
 android_desired_size  = 1
 android_max_size      = 4
+# Build/run workload nodes (no KVM needed). Size memory for your largest build.
+build_instance_type = "r7i.2xlarge"
+build_volume_size   = 300
+build_desired_size  = 1
+build_max_size      = 4

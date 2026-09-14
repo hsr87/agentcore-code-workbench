@@ -222,6 +222,54 @@ resource "aws_eks_node_group" "android" {
   }
   depends_on = [aws_iam_role_policy_attachment.node, aws_eks_addon.cni]
 }
+# Build/run workloads (WorkloadProfile) need memory and disk, not KVM, so they get their own node group on any
+# instance family. Nothing else schedules here: the taint keeps system Pods and emulators off these nodes.
+resource "aws_launch_template" "build" {
+  name_prefix = "${local.name}-build-"
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = var.build_volume_size
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+}
+resource "aws_eks_node_group" "build" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "build"
+  node_role_arn   = aws_iam_role.node.arn
+  subnet_ids      = var.subnet_ids
+  ami_type        = "AL2023_x86_64_STANDARD"
+  instance_types  = [var.build_instance_type]
+  labels          = { "cwe/workload" = "build" }
+  taint {
+    key    = "cwe/build"
+    value  = "true"
+    effect = "NO_SCHEDULE"
+  }
+  launch_template {
+    id      = aws_launch_template.build.id
+    version = aws_launch_template.build.latest_version
+  }
+  scaling_config {
+    min_size     = 0
+    desired_size = var.build_desired_size
+    max_size     = var.build_max_size
+  }
+  lifecycle {
+    precondition {
+      condition     = var.build_desired_size >= 0 && var.build_desired_size <= var.build_max_size
+      error_message = "build_desired_size must be between zero and build_max_size."
+    }
+  }
+  depends_on = [aws_iam_role_policy_attachment.node, aws_eks_addon.cni]
+}
 resource "aws_eks_addon" "core" {
   for_each                    = toset(["coredns", "kube-proxy"])
   cluster_name                = aws_eks_cluster.main.name

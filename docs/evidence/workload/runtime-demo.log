@@ -1,0 +1,17 @@
+runtime session demo-bb4d4e020f8d76be1c830858824ad596
+"2\r\n               total        used        free      shared  buff/cache   available\r\nMem:               7           0           7           0           0           7\r\nSwap:              0           0           0\r\nFilesystem               Size  Used Avail Use% Mounted on\r\noverlayfs:/overlay/root  9.7G   37M  9.2G   1% /\r\n"
+workload {"kind": "workload", "session_id": "sess_fbe276d9eab0", "job": "cwe-sess-fbe276d9eab0-85f467-0", "pod_ip": "172.31.93.60", "profile": {"name": "build", "image": "<account-id>.dkr.ecr.us-east-1.amazonaws.com/cwe-eks-workload-agent:v1-20260914", "cpu": "4", "cpu_limit": null, "memory": "16Gi", "ephemeral_storage": "50Gi", "env": {}, "boot_timeout": 600, "job_timeout_seconds": 28800, "node_selector": {"cwe/workload": "build"}, "toleration_key": "cwe/build", "arch": "amd64", "inject_agent": false}} health {"ok": true, "work": "/opt/cwe/work", "uptime_seconds": 3.6, "cpus": 8, "disk_free_bytes": 315542257664, "disk_total_bytes": 322042834944, "mem_total_bytes": 66331783168, "mem_available_bytes": 65083637760, "procs": []}
+sync {"bytes": 169, "files": 2, "dest": ".", "seconds": 0.06, "snapshot_id": "snap_fce4edcef8f5"}
+build exit 0 total 4
+drwxrwsrwx+   2 root   ubuntu 23 Sep 14 07:58 .
+drwxr-xr-x+   1 ubuntu ubuntu 19 Sep 14 07:03 ..
+-rw-r--r--+   1 ubuntu ubuntu  7 Sep 14 07:58 README.md
+4
+/dev/nvme0n1p1  300G  6.1G  294G   3% /opt/cwe/work
+openjdk version "17.0.20" 2026-07-21
+
+sleeping 420s so the microVM can be released ...
+after wait: same session True same Pod True new microVM process True {"before": {"id": "4fcacd75", "started_at": 1789372709.9843616}, "after": {"id": "c00602a1", "started_at": 1789372681.2100644}}
+workspace still there after wait: True
+{"closed": "sess_fbe276d9eab0"}
+exit 0

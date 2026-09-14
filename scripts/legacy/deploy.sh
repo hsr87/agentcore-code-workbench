@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# code-workflow-emulator: 기반 리소스 배포 + device agent 이미지 빌드/푸시 + .env 생성
+# code-workflow-emulator: deploy foundation resources + build/push the device agent image + generate .env
 #   ./scripts/deploy.sh [--region us-east-1] [--no-android] [--vpc vpc-xxx] [--allowed-cidr 10.0.0.0/8]
-# 기본은 인바운드를 열지 않고 SSM Session Manager 포트 포워딩으로 device agent 에 접속한다 (session-manager-plugin 필요).
-# --allowed-cidr 는 사무실/VPN 고정 CIDR 이 있을 때만 opt-in 으로 쓴다.
+# By default no inbound is opened; the device agent is reached through SSM Session Manager port forwarding (requires session-manager-plugin).
+# --allowed-cidr is opt-in, only when you have a fixed office/VPN CIDR.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
 [[ -z "$VPC_ID" ]] && VPC_ID=$(aws ec2 describe-vpcs --region "$REGION" --filters Name=isDefault,Values=true --query "Vpcs[0].VpcId" --output text)
 ACCESS="ssm"; [[ -n "$ALLOWED_CIDR" ]] && ACCESS="public"
 if [[ "$ACCESS" == "ssm" ]] && ! command -v session-manager-plugin >/dev/null; then
-  echo "session-manager-plugin 이 없습니다. https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html" >&2; exit 1
+  echo "session-manager-plugin not found. https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html" >&2; exit 1
 fi
 echo "region=$REGION stack=$STACK vpc=$VPC_ID access=$ACCESS allowed_cidr=${ALLOWED_CIDR:-<none>} android=$ANDROID"
 
@@ -44,7 +44,7 @@ fi
 echo "3/3 .env ..."
 MANAGED="CWE_ANDROID_BACKEND CWE_ANDROID_EMULATOR_REPO CWE_ANDROID_BUILD_INSTANCE_PROFILE AWS_REGION CWE_CODE_INTERPRETER_ID CWE_STORAGE_URI CWE_SESSION_TIMEOUT_SECONDS CWE_JUDGE_MODEL CWE_AGENT_MODEL CWE_ENABLE_LLM_JUDGE CWE_ANDROID_SUBNET_ID CWE_ANDROID_SECURITY_GROUP_ID CWE_ANDROID_INSTANCE_PROFILE CWE_ANDROID_DEVICE_AGENT_IMAGE CWE_ANDROID_INSTANCE_TYPE CWE_ANDROID_ACCESS"
 EXTRA=""
-if [[ -f .env ]]; then  # 사용자가 추가한 키(CWE_MEMORY_ID, CWE_API_KEY 등)는 보존
+if [[ -f .env ]]; then  # preserve user-added keys (CWE_MEMORY_ID, CWE_API_KEY, etc.)
   while IFS= read -r line; do
     key="${line%%=*}"; [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
     grep -qw "$key" <<<"$MANAGED" || EXTRA+="$line"$'\n'
@@ -65,7 +65,7 @@ CWE_ANDROID_SECURITY_GROUP_ID=$SG
 CWE_ANDROID_INSTANCE_PROFILE=$PROFILE
 CWE_ANDROID_DEVICE_AGENT_IMAGE=$IMAGE
 CWE_ANDROID_INSTANCE_TYPE=c8i.xlarge
-# ssm: 인바운드 없이 SSM 포트 포워딩(기본) | public: --allowed-cidr 로 연 공인 IP | private: 같은 SG 의 VPC 내부 에이전트
+# ssm: SSM port forwarding with no inbound (default) | public: public IP opened with --allowed-cidr | private: in-VPC agent in the same SG
 CWE_ANDROID_ACCESS=$ACCESS
 CWE_ANDROID_EMULATOR_REPO=${EMU_REPO:-}
 CWE_ANDROID_BUILD_INSTANCE_PROFILE=${BUILD_PROFILE:-}
